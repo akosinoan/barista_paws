@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Barista Paws light theme (warm cream + coffee brown) ── */
+:root {
+  --color-background: #faf7f4;
+  --color-foreground: #2c1810;
+  --color-card: #ffffff;
+  --color-card-foreground: #2c1810;
+  --color-primary: #6d4c41;
+  --color-primary-foreground: #faf7f4;
+  --color-secondary: #f0ebe4;
+  --color-secondary-foreground: #4a3728;
+  --color-muted: #f0ebe4;
+  --color-muted-foreground: #8d7b71;
+  --color-accent: #8d6e63;
+  --color-accent-foreground: #faf7f4;
+  --color-border: #ddd3ca;
+  --color-input: #ddd3ca;
+  --color-ring: #6d4c41;
+  --color-destructive: #c62828;
+  --color-destructive-foreground: #ffffff;
+  --color-sidebar: #f5f0eb;
+  --color-sidebar-border: #ddd3ca;
+  --radius: 0.5rem;
+}
+
+/* ── Barista Paws dark theme (espresso + warm cream) ── */
+.dark {
+  --color-background: #1a110d;
+  --color-foreground: #f5efe9;
+  --color-card: #251813;
+  --color-card-foreground: #f5efe9;
+  --color-primary: #a1887f;
+  --color-primary-foreground: #1a110d;
+  --color-secondary: #3e2723;
+  --color-secondary-foreground: #f5efe9;
+  --color-muted: #3e2723;
+  --color-muted-foreground: #a89890;
+  --color-accent: #8d6e63;
+  --color-accent-foreground: #f5efe9;
+  --color-border: #4e342e;
+  --color-input: #4e342e;
+  --color-ring: #a1887f;
+  --color-destructive: #ef5350;
+  --color-destructive-foreground: #fafafa;
+  --color-sidebar: #1f1410;
+  --color-sidebar-border: #4e342e;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

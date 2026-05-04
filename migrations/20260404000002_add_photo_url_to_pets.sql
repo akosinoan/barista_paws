@@ -1,0 +1,1 @@
+ALTER TABLE pets ADD COLUMN photo_url TEXT NULL;
