@@ -4,10 +4,16 @@ import { getUser, updateUser, changePassword, uploadUserAvatar } from '../lib/ap
 import { useAuth } from '../lib/AuthContext';
 import { Button, Input, Label, Alert, Card, Avatar, LoadingState } from '../components/ui';
 
-export default function EditUserPage() {
-  const { userId } = useParams();
+export default function EditUserPage({ userId: userIdProp, onDone, embedded = false }) {
+  const params = useParams();
+  const userId = userIdProp || params.userId;
   const navigate = useNavigate();
   const { user: authUser, isAdmin } = useAuth();
+
+  const finish = () => {
+    if (onDone) onDone();
+    else navigate(isAdmin ? '/admin/users' : '/dashboard');
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -73,7 +79,7 @@ export default function EditUserPage() {
       address: form.address || null,
     });
     if (res.success) {
-      navigate(isAdmin ? '/admin/users' : '/dashboard');
+      finish();
     } else {
       setError(res.message || 'Update failed');
     }
@@ -127,8 +133,10 @@ export default function EditUserPage() {
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 py-8 space-y-8">
-      <h1 className="text-3xl font-bold text-(--color-foreground)">Edit User</h1>
+    <div className={embedded ? 'space-y-6' : 'max-w-md mx-auto px-4 py-8 space-y-8'}>
+      {!embedded && (
+        <h1 className="text-3xl font-bold text-(--color-foreground)">Edit User</h1>
+      )}
 
       {/* Avatar */}
       <div className="flex items-center gap-5">
@@ -177,7 +185,7 @@ export default function EditUserPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => navigate(isAdmin ? '/admin/users' : '/dashboard')}
+              onClick={finish}
               className="w-full sm:w-auto"
             >
               Cancel

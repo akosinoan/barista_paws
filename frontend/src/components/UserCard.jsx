@@ -1,8 +1,14 @@
-import { Link } from 'react-router-dom';
 import { Pencil, Trash2, PawPrint, CalendarPlus } from 'lucide-react';
 import { Button, Avatar } from './ui';
 
-export default function UserCard({ user, pets = [], onDelete, onRequestAppointment }) {
+export default function UserCard({
+  user,
+  pets = [],
+  onDelete,
+  onRequestAppointment,
+  onEdit,
+  onManagePets,
+}) {
   return (
     <div className="border border-(--color-border) rounded-lg p-4 bg-(--color-card) text-(--color-card-foreground)">
       <div className="flex justify-between items-start">
@@ -18,7 +24,12 @@ export default function UserCard({ user, pets = [], onDelete, onRequestAppointme
           </div>
         </div>
         <div className="flex gap-1 shrink-0 ml-2">
-          <Button variant="ghost" size="icon" as={Link} to={`/admin/users/${user.id}/edit`} title="Edit user">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => onEdit?.(user)}
+            title="Edit user"
+          >
             <Pencil size={16} />
           </Button>
           <Button variant="destructive" size="icon" onClick={() => onDelete(user.id)} title="Delete user">
@@ -42,20 +53,26 @@ export default function UserCard({ user, pets = [], onDelete, onRequestAppointme
       <div className="mt-3 pt-3 border-t border-(--color-border)">
         <div className="flex items-center justify-between mb-1.5">
           <p className="text-xs font-medium text-(--color-muted-foreground)">Pets</p>
-          <Button size="xs" as={Link} to={`/admin/users/${user.id}/pets`} title="Manage pets" className="no-underline">
+          <Button
+            size="xs"
+            onClick={() => onManagePets?.(user)}
+            title="Manage pets"
+            className="no-underline"
+          >
             <PawPrint size={16} /> Manage Pets
           </Button>
         </div>
         {pets.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {pets.map((pet) => (
-              <Link
+              <button
                 key={pet.id}
-                to={`/admin/users/${user.id}/pets`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-(--color-secondary) text-(--color-secondary-foreground) no-underline hover:opacity-80 transition-opacity"
+                type="button"
+                onClick={() => onManagePets?.(user)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-(--color-secondary) text-(--color-secondary-foreground) hover:opacity-80 transition-opacity cursor-pointer border-0"
               >
                 <PawPrint size={12} /> {pet.name}
-              </Link>
+              </button>
             ))}
           </div>
         ) : (

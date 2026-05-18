@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import {
   Users,
   CalendarClock,
+  FileSignature,
   ChevronLeft,
   ChevronRight,
   X,
@@ -16,6 +17,7 @@ import { cn } from "../lib/utils";
 const NAV_ITEMS = [
   { to: "/admin/users", icon: Users, label: "All Customers" },
   { to: "/admin/appointments", icon: CalendarClock, label: "Appointments" },
+  { to: "/admin/waivers", icon: FileSignature, label: "Waivers" },
 ];
 
 function NavItem({ to, icon: Icon, label, collapsed, onClick }) {

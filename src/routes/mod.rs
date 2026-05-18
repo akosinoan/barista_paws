@@ -7,6 +7,7 @@ pub mod auth;
 pub mod pets;
 pub mod timeslots;
 pub mod users;
+pub mod waivers;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -15,4 +16,5 @@ pub fn router() -> Router<AppState> {
         .merge(pets::router())
         .merge(appointments::router())
         .merge(timeslots::router())
+        .merge(waivers::router())
 }

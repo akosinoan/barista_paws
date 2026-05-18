@@ -1,18 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  getAvailableTimeslots,
   getBlockedTimeslots,
   blockTimeslot,
   unblockTimeslot,
 } from '../lib/api';
-import { Button, Input, Label, Alert, DateField } from './ui';
+import { Button, Input, Label, Alert } from './ui';
 import { Trash2 } from 'lucide-react';
-import { todayIso } from '../lib/utils';
+import WeeklyCalendar from './scheduling/WeeklyCalendar';
+import { formatSlot12, normalizeSlot, parseIsoDate } from './scheduling/slotUtils';
 
 function formatDate(iso) {
   try {
-    const d = new Date(`${iso}T00:00:00`);
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return parseIsoDate(iso).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
   } catch {
     return iso;
   }
@@ -21,13 +24,12 @@ function formatDate(iso) {
 export default function BlockedSlotManager() {
   const [blocked, setBlocked] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState('');
-  const [slot, setSlot] = useState('');
-  const [wholeDay, setWholeDay] = useState(false);
+  const [pending, setPending] = useState(null); // { iso, slot }
   const [reason, setReason] = useState('');
-  const [availability, setAvailability] = useState([]);
+  const [wholeDay, setWholeDay] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const reload = () => {
     getBlockedTimeslots().then((res) => {
@@ -40,109 +42,133 @@ export default function BlockedSlotManager() {
     reload();
   }, []);
 
-  useEffect(() => {
-    if (!date) {
-      setAvailability([]);
-      return;
-    }
-    getAvailableTimeslots(date).then((res) => {
-      if (res.success) setAvailability(res.data || []);
-    });
-    setSlot('');
-  }, [date]);
+  const findBlock = (iso, slot) => {
+    return blocked.find(
+      (b) =>
+        b.blocked_date === iso &&
+        (b.time_slot === slot || b.time_slot === slot.slice(0, 5)),
+    );
+  };
+  const findWholeDayBlock = (iso) =>
+    blocked.find((b) => b.blocked_date === iso && b.time_slot === null);
 
-  const handleBlock = async (e) => {
-    e.preventDefault();
+  const handleSlotClick = async (iso, slot, currentlyBlocked) => {
     setError('');
-    if (!date) {
-      setError('Select a date');
-      return;
+    if (currentlyBlocked) {
+      const exact = findBlock(iso, slot);
+      const whole = findWholeDayBlock(iso);
+      const target = exact || whole;
+      if (!target) {
+        setError('Could not find the block to remove.');
+        return;
+      }
+      const msg = target.time_slot
+        ? 'Unblock this timeslot?'
+        : 'Unblock the entire day?';
+      if (!confirm(msg)) return;
+      const res = await unblockTimeslot(target.id);
+      if (res.success) {
+        setBlocked((cur) => cur.filter((b) => b.id !== target.id));
+        setRefreshToken((t) => t + 1);
+      } else {
+        setError(res.message || 'Failed to unblock.');
+      }
+    } else {
+      setPending({ iso, slot });
+      setReason('');
+      setWholeDay(false);
     }
-    if (!wholeDay && !slot) {
-      setError('Select a timeslot or choose "Whole day"');
-      return;
-    }
+  };
+
+  const cancelPending = () => {
+    setPending(null);
+    setReason('');
+    setWholeDay(false);
+  };
+
+  const confirmBlock = async (e) => {
+    e.preventDefault();
+    if (!pending) return;
     setSubmitting(true);
+    setError('');
     const res = await blockTimeslot({
-      blocked_date: date,
-      time_slot: wholeDay ? null : (slot.length === 5 ? `${slot}:00` : slot),
+      blocked_date: pending.iso,
+      time_slot: wholeDay ? null : normalizeSlot(pending.slot),
       reason: reason || null,
     });
     setSubmitting(false);
     if (res.success) {
-      setBlocked([res.data, ...blocked]);
-      setDate('');
-      setSlot('');
-      setReason('');
-      setWholeDay(false);
+      setBlocked((cur) => [res.data, ...cur]);
+      setRefreshToken((t) => t + 1);
+      cancelPending();
     } else {
       setError(res.message || 'Failed to block timeslot');
     }
   };
 
-  const handleUnblock = async (id) => {
-    if (!confirm('Unblock this timeslot?')) return;
-    const res = await unblockTimeslot(id);
-    if (res.success) {
-      setBlocked(blocked.filter((b) => b.id !== id));
-    }
-  };
-
   return (
     <div className="space-y-4">
-      <form onSubmit={handleBlock} className="space-y-3">
-        {error && <Alert variant="error">{error}</Alert>}
+      {error && <Alert variant="error">{error}</Alert>}
 
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div>
-            <Label>Date *</Label>
-            <DateField value={date} onChange={setDate} min={todayIso()} required />
+      <WeeklyCalendar
+        mode="block"
+        onSlotClick={handleSlotClick}
+        loading={submitting}
+        refreshToken={refreshToken}
+      />
+
+      {pending && (
+        <form
+          onSubmit={confirmBlock}
+          className="rounded-xl border border-(--color-border) bg-(--color-card) p-4 space-y-3"
+        >
+          <div className="text-sm">
+            <span className="text-(--color-muted-foreground)">Blocking: </span>
+            <span className="font-medium text-(--color-foreground)">
+              {parseIsoDate(pending.iso).toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })}{' '}
+              · {formatSlot12(pending.slot)}
+            </span>
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-(--color-foreground) cursor-pointer">
+            <input
+              type="checkbox"
+              checked={wholeDay}
+              onChange={(e) => setWholeDay(e.target.checked)}
+              className="w-4 h-4 accent-(--color-primary)"
+            />
+            Block the entire day instead
+          </label>
+
           <div>
-            <Label>Timeslot</Label>
-            <select
-              value={slot}
-              onChange={(e) => setSlot(e.target.value)}
-              disabled={!date || wholeDay}
-              className="w-full px-3 py-2 rounded-lg border border-(--color-input) bg-(--color-background) text-(--color-foreground) focus:outline-none focus:ring-2 focus:ring-(--color-ring) text-sm disabled:opacity-60"
+            <Label>Reason</Label>
+            <Input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Holiday, Staff training"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={cancelPending}
+              disabled={submitting}
             >
-              <option value="">
-                {!date ? 'Select a date first' : 'Choose a timeslot'}
-              </option>
-              {availability.map((a) => (
-                <option key={a.time_slot} value={a.time_slot}>
-                  {a.time_slot.slice(0, 5)}
-                  {!a.available ? ' (already blocked)' : ''}
-                </option>
-              ))}
-            </select>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm" disabled={submitting}>
+              {submitting ? 'Blocking...' : 'Confirm Block'}
+            </Button>
           </div>
-        </div>
-
-        <label className="flex items-center gap-2 text-sm text-(--color-foreground) cursor-pointer">
-          <input
-            type="checkbox"
-            checked={wholeDay}
-            onChange={(e) => setWholeDay(e.target.checked)}
-          />
-          Block the whole day
-        </label>
-
-        <div>
-          <Label>Reason</Label>
-          <Input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. Holiday, Staff training"
-          />
-        </div>
-
-        <div className="flex justify-end">
-          <Button type="submit" disabled={submitting}>
-            {submitting ? 'Blocking...' : 'Block Timeslot'}
-          </Button>
-        </div>
-      </form>
+        </form>
+      )}
 
       <div className="pt-4 border-t border-(--color-border)">
         <h3 className="text-sm font-semibold mb-3 text-(--color-foreground)">
@@ -162,7 +188,9 @@ export default function BlockedSlotManager() {
                 <div className="text-sm">
                   <p className="font-medium text-(--color-foreground)">
                     {formatDate(b.blocked_date)}
-                    {b.time_slot ? ` · ${b.time_slot.slice(0, 5)}` : ' · Whole day'}
+                    {b.time_slot
+                      ? ` · ${formatSlot12(b.time_slot.length === 5 ? `${b.time_slot}:00` : b.time_slot)}`
+                      : ' · Whole day'}
                   </p>
                   {b.reason && (
                     <p className="text-xs text-(--color-muted-foreground) mt-0.5">{b.reason}</p>
@@ -171,7 +199,14 @@ export default function BlockedSlotManager() {
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={() => handleUnblock(b.id)}
+                  onClick={async () => {
+                    if (!confirm('Unblock this timeslot?')) return;
+                    const res = await unblockTimeslot(b.id);
+                    if (res.success) {
+                      setBlocked((cur) => cur.filter((x) => x.id !== b.id));
+                      setRefreshToken((t) => t + 1);
+                    }
+                  }}
                   aria-label="Unblock"
                 >
                   <Trash2 size={14} /> Unblock

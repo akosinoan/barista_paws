@@ -10,8 +10,10 @@ import {
 import UserCard from '../components/UserCard';
 import AddUserForm from '../components/AddUserForm';
 import AppointmentForm from '../components/AppointmentForm';
+import EditUserPage from './EditUserPage';
+import PetsPage from './PetsPage';
 import { Search, Plus } from 'lucide-react';
-import { Button, Card, Input, LoadingState, EmptyState } from '../components/ui';
+import { Button, Card, Input, LoadingState, EmptyState, Modal } from '../components/ui';
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
@@ -20,6 +22,8 @@ export default function UsersPage() {
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [bookingFor, setBookingFor] = useState(null);
+  const [editingUser, setEditingUser] = useState(null);
+  const [petsForUser, setPetsForUser] = useState(null);
 
   const fetchUsers = async () => {
     const res = await getUsers();
@@ -102,27 +106,43 @@ export default function UsersPage() {
         </Card>
       )}
 
-      {bookingFor && (
-        <Card className="mb-6">
-          <div className="p-4 sm:p-6">
-            <h2 className="text-xl font-semibold mb-1 text-(--color-foreground)">
-              Request Appointment
-            </h2>
-            <p className="text-sm text-(--color-muted-foreground) mb-4">
-              Booking on behalf of{' '}
-              <span className="font-medium text-(--color-foreground)">
-                {bookingFor.first_name} {bookingFor.last_name}
-              </span>
-            </p>
-            <AppointmentForm
-              ownerId={bookingFor.id}
-              onSubmit={handleBookAppointment}
-              onCancel={() => setBookingFor(null)}
-              allowOverride
-            />
-          </div>
-        </Card>
-      )}
+      <Modal
+        open={!!bookingFor}
+        onClose={() => setBookingFor(null)}
+        labelledBy="request-appointment-title"
+      >
+        {bookingFor && (
+          <>
+            <div className="px-5 py-4 border-b border-(--color-border) shrink-0">
+              <h2
+                id="request-appointment-title"
+                className="text-lg font-semibold text-(--color-foreground)"
+              >
+                Request Appointment
+              </h2>
+              <p className="text-sm text-(--color-muted-foreground) mt-1">
+                Booking on behalf of{' '}
+                <span className="font-medium text-(--color-foreground)">
+                  {bookingFor.first_name} {bookingFor.last_name}
+                </span>
+              </p>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
+              <p className="text-xs text-(--color-muted-foreground) mb-4">
+                The waiver will be signed by the client from their appointment
+                view — you cannot sign on their behalf.
+              </p>
+              <AppointmentForm
+                ownerId={bookingFor.id}
+                onSubmit={handleBookAppointment}
+                onCancel={() => setBookingFor(null)}
+                allowOverride
+                skipWaiver
+              />
+            </div>
+          </>
+        )}
+      </Modal>
 
       <div className="relative mb-6">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-(--color-muted-foreground)" />
@@ -149,10 +169,79 @@ export default function UsersPage() {
                 setBookingFor(u);
                 setShowForm(false);
               }}
+              onEdit={(u) => setEditingUser(u)}
+              onManagePets={(u) => setPetsForUser(u)}
             />
           ))}
         </div>
       )}
+
+      <Modal
+        open={!!editingUser}
+        onClose={() => setEditingUser(null)}
+        labelledBy="edit-user-title"
+      >
+        {editingUser && (
+          <>
+            <div className="px-5 py-4 border-b border-(--color-border) shrink-0">
+              <h2
+                id="edit-user-title"
+                className="text-lg font-semibold text-(--color-foreground)"
+              >
+                Edit User
+              </h2>
+              <p className="text-sm text-(--color-muted-foreground) mt-1">
+                {editingUser.first_name} {editingUser.last_name}
+              </p>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
+              <EditUserPage
+                userId={editingUser.id}
+                embedded
+                onDone={() => {
+                  setEditingUser(null);
+                  fetchUsers();
+                }}
+              />
+            </div>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!petsForUser}
+        onClose={() => {
+          setPetsForUser(null);
+          fetchUsers();
+        }}
+        labelledBy="pets-modal-title"
+      >
+        {petsForUser && (
+          <>
+            <div className="px-5 py-4 border-b border-(--color-border) shrink-0">
+              <h2
+                id="pets-modal-title"
+                className="text-lg font-semibold text-(--color-foreground)"
+              >
+                {petsForUser.first_name}'s Pets
+              </h2>
+              <p className="text-sm text-(--color-muted-foreground) mt-1">
+                {petsForUser.email}
+              </p>
+            </div>
+            <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
+              <PetsPage
+                userId={petsForUser.id}
+                embedded
+                onDone={() => {
+                  setPetsForUser(null);
+                  fetchUsers();
+                }}
+              />
+            </div>
+          </>
+        )}
+      </Modal>
     </>
   );
 }

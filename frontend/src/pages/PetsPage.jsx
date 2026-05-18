@@ -7,8 +7,9 @@ import PetForm from '../components/PetForm';
 import { Plus, ArrowLeft } from 'lucide-react';
 import { Button, Card, LoadingState, EmptyState } from '../components/ui';
 
-export default function PetsPage() {
-  const { userId } = useParams();
+export default function PetsPage({ userId: userIdProp, onDone, embedded = false }) {
+  const params = useParams();
+  const userId = userIdProp || params.userId;
   const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
   const [pets, setPets] = useState([]);
@@ -87,9 +88,9 @@ export default function PetsPage() {
   const canEdit = isAdmin || isOwnPage;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      {isAdmin && (
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="mb-4">
+    <div className={embedded ? '' : 'max-w-4xl mx-auto px-4 py-8'}>
+      {isAdmin && !embedded && (
+        <Button variant="ghost" size="sm" onClick={() => (onDone ? onDone() : navigate(-1))} className="mb-4">
           <ArrowLeft size={16} /> Back
         </Button>
       )}

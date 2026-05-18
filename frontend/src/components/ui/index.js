@@ -8,3 +8,4 @@ export { default as LoadingState, Skeleton } from './LoadingState';
 export { default as EmptyState } from './EmptyState';
 export { default as RadioGroup } from './RadioGroup';
 export { default as DateField } from './DateField';
+export { default as Modal } from './Modal';

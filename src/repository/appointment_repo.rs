@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::models::appointment::{
@@ -6,13 +6,12 @@ use crate::models::appointment::{
 };
 use crate::models::pet::Pet;
 
-pub async fn create_appointment(
-    pool: &PgPool,
+pub async fn insert_in_tx(
+    tx: &mut Transaction<'_, Postgres>,
     client_id: &Uuid,
     payload: &CreateAppointmentRequest,
-) -> Result<AppointmentWithPets, sqlx::Error> {
+) -> Result<Uuid, sqlx::Error> {
     let appointment_id = Uuid::new_v4();
-    let mut tx = pool.begin().await?;
 
     sqlx::query(
         r#"
@@ -25,7 +24,7 @@ pub async fn create_appointment(
     .bind(&payload.appointment_date)
     .bind(&payload.time_slot)
     .bind(&payload.notes)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
     for pet_id in &payload.pet_ids {
@@ -34,12 +33,21 @@ pub async fn create_appointment(
         )
         .bind(&appointment_id)
         .bind(pet_id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     }
 
-    tx.commit().await?;
+    Ok(appointment_id)
+}
 
+pub async fn create_appointment(
+    pool: &PgPool,
+    client_id: &Uuid,
+    payload: &CreateAppointmentRequest,
+) -> Result<AppointmentWithPets, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let appointment_id = insert_in_tx(&mut tx, client_id, payload).await?;
+    tx.commit().await?;
     get_by_id(pool, &appointment_id).await
 }
 
@@ -53,8 +61,19 @@ pub async fn get_by_id(pool: &PgPool, id: &Uuid) -> Result<AppointmentWithPets, 
     .await?;
 
     let pets = fetch_pets_for_appointment(pool, id).await?;
+    let waiver_signed = is_waiver_signed(pool, id).await?;
 
-    Ok(AppointmentWithPets { appointment, pets })
+    Ok(AppointmentWithPets { appointment, pets, waiver_signed })
+}
+
+pub async fn is_waiver_signed(pool: &PgPool, id: &Uuid) -> Result<bool, sqlx::Error> {
+    let exists: Option<bool> = sqlx::query_scalar(
+        r#"SELECT EXISTS(SELECT 1 FROM signed_waivers WHERE appointment_id = $1)"#,
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await?;
+    Ok(exists.unwrap_or(false))
 }
 
 pub async fn list_by_client(
@@ -180,7 +199,8 @@ async fn attach_pets(
     let mut out = Vec::with_capacity(appointments.len());
     for appointment in appointments {
         let pets = fetch_pets_for_appointment(pool, &appointment.id).await?;
-        out.push(AppointmentWithPets { appointment, pets });
+        let waiver_signed = is_waiver_signed(pool, &appointment.id).await?;
+        out.push(AppointmentWithPets { appointment, pets, waiver_signed });
     }
     Ok(out)
 }

@@ -108,6 +108,28 @@ export const rejectAppointment = (id) =>
 export const completeAppointment = (id) =>
   request(`/appointments/${id}/complete`, { method: 'POST' });
 
+// Waiver API
+export const getActiveWaiver = () => request('/waivers/active');
+
+export const listWaiverTemplates = () => request('/waivers/templates');
+
+export const createWaiverTemplate = (data) =>
+  request('/waivers/templates', { method: 'POST', body: JSON.stringify(data) });
+
+export const activateWaiverTemplate = (id) =>
+  request(`/waivers/templates/${id}/activate`, { method: 'POST' });
+
+export const getSignedWaiver = (appointmentId) =>
+  request(`/appointments/${appointmentId}/waiver`);
+
+export const signAppointmentWaiver = (appointmentId, data) =>
+  request(`/appointments/${appointmentId}/sign-waiver`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const getAuditLogs = () => request('/admin/audit-logs');
+
 // Timeslot API (auth required)
 export const getAvailableTimeslots = (date) =>
   request(`/timeslots?date=${encodeURIComponent(date)}`);

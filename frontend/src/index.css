@@ -49,6 +49,17 @@
   --color-sidebar-border: #4e342e;
 }
 
+.blocked-stripe {
+  background-color: var(--color-muted);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0,
+    transparent 4px,
+    color-mix(in srgb, var(--color-destructive) 35%, transparent) 4px,
+    color-mix(in srgb, var(--color-destructive) 35%, transparent) 6px
+  );
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;

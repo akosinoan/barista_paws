@@ -21,6 +21,7 @@ pub struct AppointmentWithPets {
     #[serde(flatten)]
     pub appointment: Appointment,
     pub pets: Vec<Pet>,
+    pub waiver_signed: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +32,9 @@ pub struct CreateAppointmentRequest {
     pub notes: Option<String>,
     #[serde(default)]
     pub force: bool,
+    /// Required when client books for themselves. When an admin books on behalf of a client,
+    /// this MUST be omitted — the client signs later via POST /api/appointments/{id}/waiver.
+    pub waiver: Option<crate::models::waiver::WaiverSignaturePayload>,
 }
 
 #[derive(Debug, Deserialize)]
