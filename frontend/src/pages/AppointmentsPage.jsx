@@ -35,6 +35,10 @@ export default function AppointmentsPage() {
     return res;
   };
 
+  const handleUpdated = (updated) => {
+    setAppointments((cur) => cur.map((a) => (a.id === updated.id ? updated : a)));
+  };
+
   const handleCancel = async (id) => {
     if (!confirm('Cancel this appointment?')) return;
     const res = await cancelAppointment(id);
@@ -86,6 +90,7 @@ export default function AppointmentsPage() {
               key={appt.id}
               appointment={appt}
               onCancel={handleCancel}
+              onUpdated={handleUpdated}
             />
           ))}
         </div>

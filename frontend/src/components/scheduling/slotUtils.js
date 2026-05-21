@@ -1,6 +1,8 @@
-export const OPEN_HOUR = 9;
-export const CLOSE_HOUR = 18;
-export const SLOT_MINUTES = 30;
+// Fallback defaults — match the migration seed. Runtime should use the live
+// business hours from BusinessHoursContext rather than these constants.
+export const DEFAULT_OPEN_TIME = '09:00:00';
+export const DEFAULT_CLOSE_TIME = '18:00:00';
+export const DEFAULT_SLOT_MINUTES = 30;
 
 export const WEEKDAYS_LONG = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
@@ -40,15 +42,51 @@ export function weekDates(weekStart) {
   return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 }
 
-export function allSlots() {
+function timeToMinutes(t) {
+  if (!t) return 0;
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function minutesToSlot(m) {
+  return `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}:00`;
+}
+
+export function allSlots(hours) {
+  const open = timeToMinutes(hours?.open_time || DEFAULT_OPEN_TIME);
+  const close = timeToMinutes(hours?.close_time || DEFAULT_CLOSE_TIME);
+  const step = Math.max(1, hours?.slot_minutes || DEFAULT_SLOT_MINUTES);
   const out = [];
-  const total = (CLOSE_HOUR - OPEN_HOUR) * 60;
-  for (let off = 0; off < total; off += SLOT_MINUTES) {
-    const h = OPEN_HOUR + Math.floor(off / 60);
-    const m = off % 60;
-    out.push(`${pad2(h)}:${pad2(m)}:00`);
+  for (let m = open; m < close; m += step) {
+    out.push(minutesToSlot(m));
   }
   return out;
+}
+
+// Full-day slot grid aligned to `open_time`/`slot_minutes`. Used by the admin
+// override view so admins can pick any time in the day.
+export function allDaySlots(hours) {
+  const open = timeToMinutes(hours?.open_time || DEFAULT_OPEN_TIME);
+  const step = Math.max(1, hours?.slot_minutes || DEFAULT_SLOT_MINUTES);
+  const offset = open % step;
+  const out = [];
+  for (let m = offset; m < 24 * 60; m += step) {
+    out.push(minutesToSlot(m));
+  }
+  return out;
+}
+
+export function isWithinBusinessHours(slot, hours) {
+  const open = timeToMinutes(hours?.open_time || DEFAULT_OPEN_TIME);
+  const close = timeToMinutes(hours?.close_time || DEFAULT_CLOSE_TIME);
+  const m = timeToMinutes(slot.length === 5 ? `${slot}:00` : slot);
+  return m >= open && m < close;
+}
+
+export function formatTimeRange(hours) {
+  const open = hours?.open_time || DEFAULT_OPEN_TIME;
+  const close = hours?.close_time || DEFAULT_CLOSE_TIME;
+  return `${formatSlot12(open)} – ${formatSlot12(close)}`;
 }
 
 export function formatSlot12(slot) {

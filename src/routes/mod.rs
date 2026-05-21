@@ -4,6 +4,7 @@ use crate::AppState;
 
 pub mod appointments;
 pub mod auth;
+pub mod business_hours;
 pub mod pets;
 pub mod timeslots;
 pub mod users;
@@ -17,4 +18,5 @@ pub fn router() -> Router<AppState> {
         .merge(appointments::router())
         .merge(timeslots::router())
         .merge(waivers::router())
+        .merge(business_hours::router())
 }

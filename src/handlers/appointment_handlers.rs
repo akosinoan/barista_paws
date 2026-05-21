@@ -20,7 +20,7 @@ use crate::{
     models::appointment::{CreateAppointmentRequest, UpdateAppointmentRequest},
     models::audit::AuditLogInsert,
     models::waiver::SignedWaiverInsert,
-    repository::{appointment_repo, audit_repo, pet_repo, timeslot_repo, waiver_repo},
+    repository::{appointment_repo, audit_repo, business_hours_repo, pet_repo, timeslot_repo, waiver_repo},
     util::client_meta::ClientMeta,
     util::signing::{payload_hash, SignedWaiverInputs},
     AppState,
@@ -116,11 +116,23 @@ pub async fn create_appointment(
 
     let admin_override = is_admin && payload.force;
 
-    if !admin_override && !config::is_valid_slot(payload.time_slot) {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "Invalid timeslot: must align with business hours",
-        );
+    if !admin_override {
+        let bh = match business_hours_repo::get(&state.db_pool).await {
+            Ok(bh) => bh,
+            Err(e) => {
+                tracing::error!(error = ?e, "failed to load business hours");
+                return error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to load business hours: {}", e),
+                );
+            }
+        };
+        if !config::is_valid_slot(&bh, payload.time_slot) {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "Invalid timeslot: must align with business hours",
+            );
+        }
     }
 
     let mut pet_names: Vec<String> = Vec::with_capacity(payload.pet_ids.len());
@@ -557,13 +569,23 @@ pub async fn update_appointment(
         return error(StatusCode::BAD_REQUEST, "Invalid status value");
     }
 
-    if let Some(slot) = payload.time_slot
-        && !config::is_valid_slot(slot)
-    {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "Invalid timeslot: must align with business hours",
-        );
+    if let Some(slot) = payload.time_slot {
+        let bh = match business_hours_repo::get(&state.db_pool).await {
+            Ok(bh) => bh,
+            Err(e) => {
+                tracing::error!(error = ?e, "failed to load business hours");
+                return error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to load business hours: {}", e),
+                );
+            }
+        };
+        if !is_admin && !config::is_valid_slot(&bh, slot) {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "Invalid timeslot: must align with business hours",
+            );
+        }
     }
 
     if let Some(pet_ids) = &payload.pet_ids {

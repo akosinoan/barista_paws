@@ -8,15 +8,18 @@ import {
   WEEKDAYS_LONG,
   addDays,
   allSlots,
+  allDaySlots,
   formatSlot12,
   formatWeekRange,
   isPastSlot,
   isSameDayIso,
+  isWithinBusinessHours,
   resolvedTimezone,
   toIsoDate,
   weekDates,
   weekStartOf,
 } from './slotUtils';
+import { useBusinessHours } from '../../lib/BusinessHoursContext';
 
 function classNames(...xs) {
   return xs.filter(Boolean).join(' ');
@@ -46,8 +49,13 @@ export default function WeeklyCalendar({
   }, [refreshToken]);
   const loading = dataLoading || externalLoading;
 
+  const { hours } = useBusinessHours();
+  const [showOutsideHours, setShowOutsideHours] = useState(false);
   const days = weekDates(weekStart);
-  const slots = useMemo(allSlots, []);
+  const slots = useMemo(
+    () => (allowOverride && showOutsideHours ? allDaySlots(hours) : allSlots(hours)),
+    [allowOverride, showOutsideHours, hours],
+  );
 
   const [focus, setFocus] = useState({ row: 0, col: 0 });
   const cellRefs = useRef({});
@@ -65,15 +73,17 @@ export default function WeeklyCalendar({
     const key = `${iso} ${slot}`;
     if (selectedKeys && selectedKeys.has(key)) return 'selected';
     if (blockedSet && blockedSet.has(key)) return 'blocked';
+    const outside = !isWithinBusinessHours(slot, hours);
     const avail = daysMap[iso];
     if (avail) {
       const meta = avail.find((a) => a.time_slot === slot);
       if (meta && meta.available === false) return 'blocked';
-      if (!meta) return 'loading';
-    } else {
+      if (!meta && !outside) return 'loading';
+    } else if (!outside) {
       return 'loading';
     }
     if (value && value.date === iso && value.slot === slot) return 'selected';
+    if (outside) return 'outside-hours';
     return 'available';
   };
 
@@ -82,7 +92,13 @@ export default function WeeklyCalendar({
     if (state === 'loading') return;
     if (mode === 'select') {
       if (state === 'blocked' && !allowOverride) return;
-      const next = { date: iso, slot, blocked: state === 'blocked' };
+      if (state === 'outside-hours' && !allowOverride) return;
+      const next = {
+        date: iso,
+        slot,
+        blocked: state === 'blocked',
+        outsideHours: state === 'outside-hours',
+      };
       onChange && onChange(next);
       setAnnouncement(
         `Selected ${new Date(iso + 'T00:00:00').toLocaleDateString(undefined, {
@@ -171,12 +187,28 @@ export default function WeeklyCalendar({
         </div>
       </div>
 
+      {allowOverride && (
+        <div className="flex">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowOutsideHours((s) => !s)}
+          >
+            {showOutsideHours ? 'Hide outside business hours' : 'Show outside business hours'}
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3 text-xs text-(--color-muted-foreground)">
         <LegendSwatch className="bg-(--color-card) border border-(--color-border)" label="Available" />
         <LegendSwatch className="bg-(--color-primary)" label={mode === 'block' ? 'Selected' : 'Selected'} />
         <LegendSwatch className="blocked-stripe border border-(--color-border)" label={mode === 'block' ? 'Blocked (click to unblock)' : 'Blocked'} />
         <LegendSwatch className="bg-(--color-muted) border border-(--color-border)" label="Past" />
         <LegendSwatch className="bg-(--color-primary)/20 border border-(--color-primary)" label="Today" />
+        {allowOverride && showOutsideHours && (
+          <LegendSwatch className="bg-(--color-muted)/40 border border-(--color-border)" label="Outside business hours" />
+        )}
       </div>
 
       <div
@@ -240,7 +272,8 @@ export default function WeeklyCalendar({
                     state === 'available' ||
                     state === 'selected' ||
                     (mode === 'block' && state === 'blocked') ||
-                    (mode === 'select' && state === 'blocked' && allowOverride);
+                    (mode === 'select' && state === 'blocked' && allowOverride) ||
+                    (mode === 'select' && state === 'outside-hours' && allowOverride);
                   const label = `${WEEKDAYS_LONG[d.getDay()]} ${d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}, ${formatSlot12(slot)}, ${state}`;
                   return (
                     <td
@@ -274,6 +307,9 @@ export default function WeeklyCalendar({
                             'cursor-not-allowed text-(--color-muted-foreground) blocked-stripe',
                           mode === 'block' && state === 'blocked' && 'cursor-pointer',
                           mode === 'select' && state === 'blocked' && allowOverride && 'cursor-pointer',
+                          state === 'outside-hours' &&
+                            'cursor-not-allowed bg-(--color-muted)/40 text-(--color-muted-foreground)',
+                          mode === 'select' && state === 'outside-hours' && allowOverride && 'cursor-pointer hover:bg-(--color-muted)',
                           state === 'past' && 'cursor-not-allowed bg-(--color-muted) text-(--color-muted-foreground) line-through opacity-70',
                           state === 'loading' && 'animate-pulse bg-(--color-muted)/40',
                         )}

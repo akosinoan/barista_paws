@@ -14,7 +14,9 @@ import AppointmentsPage from './pages/AppointmentsPage';
 import AdminAppointmentsPage from './pages/AdminAppointmentsPage';
 import WaiverTemplatesPage from './pages/WaiverTemplatesPage';
 import BlockedSlotsPage from './pages/BlockedSlotsPage';
+import BusinessHoursPage from './pages/BusinessHoursPage';
 import { LoadingState } from './components/ui';
+import { BusinessHoursProvider } from './lib/BusinessHoursContext';
 
 function HomeRedirect() {
   const { isLoggedIn, isAdmin, loading } = useAuth();
@@ -102,6 +104,7 @@ function AdminRoutes() {
           <Route path="/users/:userId/edit" element={<EditUserPage />} />
           <Route path="/appointments" element={<AdminAppointmentsPage />} />
           <Route path="/blocked-slots" element={<BlockedSlotsPage />} />
+          <Route path="/business-hours" element={<BusinessHoursPage />} />
           <Route path="/waivers" element={<WaiverTemplatesPage />} />
           <Route path="*" element={<Navigate to="/admin/users" replace />} />
         </Routes>
@@ -124,7 +127,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <BusinessHoursProvider>
+        <AppRoutes />
+      </BusinessHoursProvider>
     </AuthProvider>
   );
 }

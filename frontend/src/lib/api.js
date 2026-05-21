@@ -160,3 +160,9 @@ export const bulkUnblockTimeslots = (ids) =>
     method: 'POST',
     body: JSON.stringify({ ids }),
   });
+
+// Business hours API (auth required; PUT admin-only)
+export const getBusinessHours = () => request('/business-hours');
+
+export const updateBusinessHours = (data) =>
+  request('/business-hours', { method: 'PUT', body: JSON.stringify(data) });

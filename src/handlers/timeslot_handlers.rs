@@ -14,7 +14,7 @@ use crate::{
     models::timeslot::{
         BlockTimeslotRequest, BulkBlockTimeslotRequest, BulkUnblockRequest, TimeslotAvailability,
     },
-    repository::timeslot_repo,
+    repository::{business_hours_repo, timeslot_repo},
     AppState,
 };
 
@@ -77,7 +77,18 @@ pub async fn list_available_slots(
     let whole_day_blocked = blocked.iter().any(|b| b.time_slot.is_none());
     let blocked_slots: Vec<_> = blocked.iter().filter_map(|b| b.time_slot).collect();
 
-    let slots: Vec<TimeslotAvailability> = config::all_slots()
+    let bh = match business_hours_repo::get(&state.db_pool).await {
+        Ok(bh) => bh,
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to load business hours");
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load business hours: {}", e),
+            );
+        }
+    };
+
+    let slots: Vec<TimeslotAvailability> = config::all_slots(&bh)
         .into_iter()
         .map(|t| TimeslotAvailability {
             time_slot: t,
@@ -98,13 +109,23 @@ pub async fn block_slot(
         return error(StatusCode::FORBIDDEN, "Access denied: admin only");
     }
 
-    if let Some(slot) = payload.time_slot
-        && !config::is_valid_slot(slot)
-    {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "Invalid timeslot: must align with business hours",
-        );
+    if let Some(slot) = payload.time_slot {
+        let bh = match business_hours_repo::get(&state.db_pool).await {
+            Ok(bh) => bh,
+            Err(e) => {
+                tracing::error!(error = ?e, "failed to load business hours");
+                return error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to load business hours: {}", e),
+                );
+            }
+        };
+        if !config::is_valid_slot(&bh, slot) {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "Invalid timeslot: must align with business hours",
+            );
+        }
     }
 
     match timeslot_repo::block_slot(&state.db_pool, &payload).await {
@@ -155,9 +176,19 @@ pub async fn bulk_block(
         return error(StatusCode::BAD_REQUEST, "No slots provided");
     }
 
+    let bh = match business_hours_repo::get(&state.db_pool).await {
+        Ok(bh) => bh,
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to load business hours");
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load business hours: {}", e),
+            );
+        }
+    };
     for s in &payload.slots {
         if let Some(slot) = s.time_slot
-            && !config::is_valid_slot(slot)
+            && !config::is_valid_slot(&bh, slot)
         {
             return error(
                 StatusCode::BAD_REQUEST,

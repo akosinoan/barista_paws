@@ -5,6 +5,7 @@ pub mod timeslot_repo;
 pub mod waiver_repo;
 pub mod audit_repo;
 pub mod image_repo;
+pub mod business_hours_repo;
 
 /// Result of a delete that may take either soft or hard form depending on dependents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

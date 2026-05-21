@@ -3,6 +3,7 @@ import {
   Users,
   CalendarClock,
   CalendarX,
+  Clock,
   FileSignature,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { to: "/admin/users", icon: Users, label: "All Customers" },
   { to: "/admin/appointments", icon: CalendarClock, label: "Appointments" },
   { to: "/admin/blocked-slots", icon: CalendarX, label: "Blocked Timeslots" },
+  { to: "/admin/business-hours", icon: Clock, label: "Business Hours" },
   { to: "/admin/waivers", icon: FileSignature, label: "Waivers" },
 ];
 

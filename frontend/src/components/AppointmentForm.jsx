@@ -3,7 +3,8 @@ import { getPetsByOwner } from '../lib/api';
 import { Button, Label, Alert } from './ui';
 import WeeklyCalendar from './scheduling/WeeklyCalendar';
 import WaiverModal from './scheduling/WaiverModal';
-import { formatSlot12, normalizeSlot, parseIsoDate } from './scheduling/slotUtils';
+import { formatSlot12, formatTimeRange, normalizeSlot, parseIsoDate } from './scheduling/slotUtils';
+import { useBusinessHours } from '../lib/BusinessHoursContext';
 
 const FIELD_CLASS =
   'w-full px-4 py-3 rounded-lg border border-(--color-input) bg-(--color-background) text-(--color-foreground) text-base focus:outline-none focus:ring-2 focus:ring-(--color-ring) disabled:opacity-60';
@@ -36,8 +37,10 @@ export default function AppointmentForm({
     );
   };
 
+  const { hours } = useBusinessHours();
   const isSlotBlocked = !!(selection && selection.blocked);
-  const needsOverrideConfirm = allowOverride && isSlotBlocked;
+  const isOutsideHours = !!(selection && selection.outsideHours);
+  const needsOverrideConfirm = allowOverride && (isSlotBlocked || isOutsideHours);
 
   const submitAppointment = async (waiverPayload, force) => {
     setSubmitting(true);
@@ -74,6 +77,10 @@ export default function AppointmentForm({
     }
     if (isSlotBlocked && !allowOverride) {
       setError('Selected timeslot is unavailable');
+      return false;
+    }
+    if (isOutsideHours && !allowOverride) {
+      setError('Selected timeslot is outside business hours');
       return false;
     }
     return true;
@@ -132,6 +139,9 @@ export default function AppointmentForm({
             {isSlotBlocked && (
               <span className="ml-2 text-(--color-destructive)">(blocked)</span>
             )}
+            {isOutsideHours && !isSlotBlocked && (
+              <span className="ml-2 text-(--color-destructive)">(outside business hours)</span>
+            )}
           </p>
         )}
       </div>
@@ -178,7 +188,9 @@ export default function AppointmentForm({
 
       {needsOverrideConfirm && (
         <Alert variant="warning">
-          This timeslot is blocked. You can override it as an admin.
+          {isSlotBlocked
+            ? 'This timeslot is blocked. You can override it as an admin.'
+            : `This time is outside business hours (${formatTimeRange(hours)}). Are you sure you want to book it?`}
         </Alert>
       )}
 

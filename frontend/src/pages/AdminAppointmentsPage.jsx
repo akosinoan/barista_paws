@@ -148,6 +148,7 @@ export default function AdminAppointmentsPage() {
                   onReject={handleReject}
                   onComplete={handleComplete}
                   onCancel={handleCancel}
+                  onUpdated={updateOne}
                   onPetClick={setSelectedPet}
                   onClientClick={setSelectedClientId}
                   highlight
@@ -263,6 +264,7 @@ export default function AdminAppointmentsPage() {
                   onReject={handleReject}
                   onComplete={handleComplete}
                   onCancel={handleCancel}
+                  onUpdated={updateOne}
                   onPetClick={setSelectedPet}
                   onClientClick={setSelectedClientId}
                   highlight={appt.appointment_date === today}
