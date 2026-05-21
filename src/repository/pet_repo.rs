@@ -2,6 +2,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::pet::{CreatePetRequest, Pet, UpdatePetRequest};
+use crate::repository::DeleteOutcome;
+
+const PET_COLUMNS: &str = "id, owner_id, name, species, breed, age, weight, notes, photo_image_id, created_at, updated_at, deleted_at";
 
 pub async fn create_pet(pool: &PgPool, owner_id: &Uuid, payload: &CreatePetRequest) -> Result<Pet, sqlx::Error> {
     let pet_id = Uuid::new_v4();
@@ -26,18 +29,35 @@ pub async fn create_pet(pool: &PgPool, owner_id: &Uuid, payload: &CreatePetReque
     get_pet_by_id(pool, &pet_id).await
 }
 
+/// Fetch a pet, excluding soft-deleted rows. Returns RowNotFound if the pet
+/// does not exist or has been soft-deleted.
 pub async fn get_pet_by_id(pool: &PgPool, pet_id: &Uuid) -> Result<Pet, sqlx::Error> {
     sqlx::query_as::<_, Pet>(
-        r#"SELECT id, owner_id, name, species, breed, age, weight, notes, photo_image_id, created_at, updated_at FROM pets WHERE id = $1"#,
+        &format!("SELECT {PET_COLUMNS} FROM pets WHERE id = $1 AND deleted_at IS NULL"),
     )
     .bind(pet_id)
     .fetch_one(pool)
     .await
 }
 
-pub async fn get_pets_by_owner(pool: &PgPool, owner_id: &Uuid) -> Result<Vec<Pet>, sqlx::Error> {
+/// Admin-only fetch that ignores the soft-delete flag.
+pub async fn get_pet_by_id_any(pool: &PgPool, pet_id: &Uuid) -> Result<Pet, sqlx::Error> {
     sqlx::query_as::<_, Pet>(
-        r#"SELECT id, owner_id, name, species, breed, age, weight, notes, photo_image_id, created_at, updated_at FROM pets WHERE owner_id = $1 ORDER BY created_at DESC"#,
+        &format!("SELECT {PET_COLUMNS} FROM pets WHERE id = $1"),
+    )
+    .bind(pet_id)
+    .fetch_one(pool)
+    .await
+}
+
+pub async fn get_pets_by_owner(
+    pool: &PgPool,
+    owner_id: &Uuid,
+    include_deleted: bool,
+) -> Result<Vec<Pet>, sqlx::Error> {
+    let filter = if include_deleted { "" } else { " AND deleted_at IS NULL" };
+    sqlx::query_as::<_, Pet>(
+        &format!("SELECT {PET_COLUMNS} FROM pets WHERE owner_id = $1{filter} ORDER BY created_at DESC"),
     )
     .bind(owner_id)
     .fetch_all(pool)
@@ -101,11 +121,26 @@ pub async fn update_photo_image_id(
     Ok(prev.0)
 }
 
-pub async fn delete_pet(pool: &PgPool, pet_id: &Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query(r#"DELETE FROM pets WHERE id = $1"#)
-        .bind(pet_id)
-        .execute(pool)
-        .await?;
+/// Soft-delete if the pet is linked to any appointment; otherwise hard-delete.
+pub async fn delete_pet(pool: &PgPool, pet_id: &Uuid) -> Result<DeleteOutcome, sqlx::Error> {
+    let has_appointments: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS(SELECT 1 FROM appointment_pets WHERE pet_id = $1)"#,
+    )
+    .bind(pet_id)
+    .fetch_one(pool)
+    .await?;
 
-    Ok(())
+    if has_appointments {
+        sqlx::query(r#"UPDATE pets SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL"#)
+            .bind(pet_id)
+            .execute(pool)
+            .await?;
+        Ok(DeleteOutcome::Soft)
+    } else {
+        sqlx::query(r#"DELETE FROM pets WHERE id = $1"#)
+            .bind(pet_id)
+            .execute(pool)
+            .await?;
+        Ok(DeleteOutcome::Hard)
+    }
 }

@@ -4,6 +4,7 @@ use uuid::Uuid;
 use crate::models::user::{
     Admin, Client, CreateAdminRequest, CreateClientRequest, UpdateUserRequest, User,
 };
+use crate::repository::DeleteUserError;
 
 pub async fn create_client(pool: &PgPool, payload: &CreateClientRequest, hashed_password: &str) -> Result<User, sqlx::Error> {
     let mut tx = pool.begin().await?;
@@ -229,7 +230,24 @@ pub async fn update_avatar_image_id(
     Ok(prev.0)
 }
 
-pub async fn delete_user(pool: &PgPool, user_id: &Uuid) -> Result<(), sqlx::Error> {
+/// Hard-delete a user, but only when they have no pets and no appointments.
+/// FK cascades clear out `clients` / `admins` / `user_roles` rows automatically.
+pub async fn delete_user(pool: &PgPool, user_id: &Uuid) -> Result<(), DeleteUserError> {
+    let has_deps: bool = sqlx::query_scalar(
+        r#"SELECT EXISTS(
+               SELECT 1 FROM pets WHERE owner_id = $1
+               UNION ALL
+               SELECT 1 FROM appointments WHERE client_id = $1
+           )"#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    if has_deps {
+        return Err(DeleteUserError::HasDependents);
+    }
+
     sqlx::query(r#"DELETE FROM users WHERE id = $1"#)
         .bind(user_id)
         .execute(pool)

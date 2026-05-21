@@ -44,7 +44,14 @@ export default function PetCard({ pet, onEdit, onDelete, onUploadPhoto }) {
       <div className="p-4">
         <div className="flex justify-between items-start">
           <div>
-            <h3 className="text-lg font-semibold">{pet.name}</h3>
+            <h3 className="text-lg font-semibold">
+              {pet.name}
+              {pet.deleted_at && (
+                <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-(--color-destructive) text-(--color-destructive-foreground) font-medium align-middle">
+                  Deleted
+                </span>
+              )}
+            </h3>
             <p className="text-sm text-(--color-muted-foreground)">{pet.species}{pet.breed ? ` · ${pet.breed}` : ''}</p>
           </div>
           {(onEdit || onDelete) && (

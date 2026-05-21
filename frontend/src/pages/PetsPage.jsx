@@ -15,6 +15,7 @@ export default function PetsPage({ userId: userIdProp, onDone, embedded = false 
   const [owner, setOwner] = useState(null);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [includeDeleted, setIncludeDeleted] = useState(false);
 
   const isOwnPage = user?.id === userId;
   const canView = isAdmin || isOwnPage;
@@ -27,7 +28,11 @@ export default function PetsPage({ userId: userIdProp, onDone, embedded = false 
       return;
     }
 
-    Promise.all([getPetsByOwner(userId), getUser(userId)]).then(([petsRes, userRes]) => {
+    setLoading(true);
+    Promise.all([
+      getPetsByOwner(userId, { includeDeleted: isAdmin && includeDeleted }),
+      getUser(userId),
+    ]).then(([petsRes, userRes]) => {
       if (petsRes.success) {
         setPets(petsRes.data || []);
       } else {
@@ -36,7 +41,8 @@ export default function PetsPage({ userId: userIdProp, onDone, embedded = false 
       if (userRes.success) setOwner(userRes.data);
       setLoading(false);
     });
-  }, [userId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, includeDeleted]);
 
   if (accessDenied) {
     return <Navigate to={`/users/${user.id}/pets`} replace />;
@@ -51,6 +57,17 @@ export default function PetsPage({ userId: userIdProp, onDone, embedded = false 
         <Button variant="ghost" size="sm" onClick={() => (onDone ? onDone() : navigate(-1))} className="mb-4">
           <ArrowLeft size={16} /> Back
         </Button>
+      )}
+      {isAdmin && (
+        <label className="inline-flex items-center gap-2 text-sm text-(--color-muted-foreground) cursor-pointer mb-3">
+          <input
+            type="checkbox"
+            checked={includeDeleted}
+            onChange={(e) => setIncludeDeleted(e.target.checked)}
+            className="rounded border-(--color-input)"
+          />
+          Show deleted pets
+        </label>
       )}
       <PetsSection
         userId={userId}

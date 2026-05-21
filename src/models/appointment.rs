@@ -17,6 +17,7 @@ pub struct Appointment {
     pub status_changed_by: Option<Uuid>,
     pub status_changed_at: Option<DateTime<Utc>>,
     pub status_changed_by_name: Option<String>,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Serialize)]

@@ -66,6 +66,7 @@ pub async fn list_available_slots(
     let blocked = match timeslot_repo::list_blocked_slots_for_date(&state.db_pool, q.date).await {
         Ok(b) => b,
         Err(e) => {
+            tracing::error!(date = %q.date, error = ?e, "failed to load blocked slots for date");
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load blocked slots: {}", e),
@@ -108,10 +109,13 @@ pub async fn block_slot(
 
     match timeslot_repo::block_slot(&state.db_pool, &payload).await {
         Ok(blocked) => ok(StatusCode::CREATED, "Timeslot blocked", blocked),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to block timeslot: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to block timeslot");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to block timeslot: {}", e),
+            )
+        }
     }
 }
 
@@ -127,10 +131,13 @@ pub async fn list_blocked(
 
     match timeslot_repo::list_blocked(&state.db_pool, q.date).await {
         Ok(list) => ok(StatusCode::OK, "Blocked slots retrieved", list),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to list blocked slots: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to list blocked slots");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to list blocked slots: {}", e),
+            )
+        }
     }
 }
 
@@ -161,10 +168,13 @@ pub async fn bulk_block(
 
     match timeslot_repo::bulk_block_slots(&state.db_pool, &payload.slots).await {
         Ok(blocked) => ok(StatusCode::CREATED, "Timeslots blocked", blocked),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to block timeslots: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to bulk-block timeslots");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to block timeslots: {}", e),
+            )
+        }
     }
 }
 
@@ -188,10 +198,13 @@ pub async fn bulk_unblock(
             "Timeslots unblocked",
             serde_json::json!({ "deleted": count }),
         ),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to unblock timeslots: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to bulk-unblock timeslots");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to unblock timeslots: {}", e),
+            )
+        }
     }
 }
 
@@ -214,9 +227,12 @@ pub async fn unblock(
                 "data": null,
             })),
         ),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to unblock: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(block_id = %id, error = ?e, "failed to unblock timeslot");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to unblock: {}", e),
+            )
+        }
     }
 }

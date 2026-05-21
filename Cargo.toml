@@ -20,3 +20,5 @@ axum-extra = { version = "0.10", features = ["typed-header"] }
 sha2 = "0.10"
 hex = "0.4"
 moka = { version = "0.12", features = ["future"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

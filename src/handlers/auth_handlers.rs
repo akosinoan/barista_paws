@@ -50,7 +50,8 @@ pub async fn login(
 
     let token = match create_token(user.id, &role) {
         Ok(t) => t,
-        Err(_) => {
+        Err(e) => {
+            tracing::error!(user_id = %user.id, error = ?e, "failed to create JWT token");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({

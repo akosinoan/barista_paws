@@ -71,8 +71,8 @@ export const uploadPetPhoto = (petId, file) => {
 export const createPet = (ownerId, data) =>
   request(`/users/${ownerId}/pets`, { method: 'POST', body: JSON.stringify(data) });
 
-export const getPetsByOwner = (ownerId) =>
-  request(`/users/${ownerId}/pets`);
+export const getPetsByOwner = (ownerId, { includeDeleted = false } = {}) =>
+  request(`/users/${ownerId}/pets${includeDeleted ? '?include_deleted=true' : ''}`);
 
 export const updatePet = (petId, data) =>
   request(`/pets/${petId}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -84,11 +84,11 @@ export const deletePet = (petId) =>
 export const createAppointment = (userId, data) =>
   request(`/users/${userId}/appointments`, { method: 'POST', body: JSON.stringify(data) });
 
-export const getMyAppointments = (userId) =>
-  request(`/users/${userId}/appointments`);
+export const getMyAppointments = (userId, { includeDeleted = false } = {}) =>
+  request(`/users/${userId}/appointments${includeDeleted ? '?include_deleted=true' : ''}`);
 
-export const getAllAppointments = () =>
-  request('/appointments');
+export const getAllAppointments = ({ includeDeleted = false } = {}) =>
+  request(`/appointments${includeDeleted ? '?include_deleted=true' : ''}`);
 
 export const getAppointment = (id) =>
   request(`/appointments/${id}`);

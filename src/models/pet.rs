@@ -15,11 +15,12 @@ pub struct Pet {
     pub photo_image_id: Option<Uuid>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 impl Serialize for Pet {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut s = serializer.serialize_struct("Pet", 11)?;
+        let mut s = serializer.serialize_struct("Pet", 12)?;
         s.serialize_field("id", &self.id)?;
         s.serialize_field("owner_id", &self.owner_id)?;
         s.serialize_field("name", &self.name)?;
@@ -31,6 +32,7 @@ impl Serialize for Pet {
         s.serialize_field("photo_url", &self.photo_url())?;
         s.serialize_field("created_at", &self.created_at)?;
         s.serialize_field("updated_at", &self.updated_at)?;
+        s.serialize_field("deleted_at", &self.deleted_at)?;
         s.end()
     }
 }

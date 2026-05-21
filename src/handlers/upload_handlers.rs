@@ -64,12 +64,18 @@ pub async fn upload_user_avatar(
 
         let image_id = match image_repo::insert_image(&state.db_pool, &data, &content_type).await {
             Ok(id) => id,
-            Err(_) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to store image"),
+            Err(e) => {
+                tracing::error!(user_id = %user_id, error = ?e, "failed to insert avatar image");
+                return json_err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to store image");
+            }
         };
 
         let prev = match user_repo::update_avatar_image_id(&state.db_pool, &user_id, &image_id).await {
             Ok(prev) => prev,
-            Err(_) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to save avatar"),
+            Err(e) => {
+                tracing::error!(user_id = %user_id, image_id = %image_id, error = ?e, "failed to set avatar image id");
+                return json_err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to save avatar");
+            }
         };
         if let Some(prev_id) = prev {
             let _ = image_repo::delete_image(&state.db_pool, &prev_id).await;
@@ -125,12 +131,18 @@ pub async fn upload_pet_photo(
 
         let image_id = match image_repo::insert_image(&state.db_pool, &data, &content_type).await {
             Ok(id) => id,
-            Err(_) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to store image"),
+            Err(e) => {
+                tracing::error!(pet_id = %pet_id, error = ?e, "failed to insert pet photo image");
+                return json_err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to store image");
+            }
         };
 
         let prev = match pet_repo::update_photo_image_id(&state.db_pool, &pet_id, &image_id).await {
             Ok(prev) => prev,
-            Err(_) => return json_err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to save photo"),
+            Err(e) => {
+                tracing::error!(pet_id = %pet_id, image_id = %image_id, error = ?e, "failed to set pet photo image id");
+                return json_err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to save photo");
+            }
         };
         if let Some(prev_id) = prev {
             let _ = image_repo::delete_image(&state.db_pool, &prev_id).await;

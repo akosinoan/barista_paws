@@ -11,7 +11,7 @@ use crate::{
         api_response::ApiResponse,
         user::{AdminResponse, ChangePasswordRequest, ClientResponse, CreateAdminRequest, CreateClientRequest, UpdateUserRequest, UserResponse},
     },
-    repository::user_repo,
+    repository::{user_repo, DeleteUserError},
     AppState,
 };
 
@@ -81,7 +81,8 @@ pub async fn change_password(
 
     let hashed = match bcrypt::hash(&payload.new_password, bcrypt::DEFAULT_COST) {
         Ok(h) => h,
-        Err(_) => {
+        Err(e) => {
+            tracing::error!(user_id = %user_id, error = ?e, "failed to hash password for change_password");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
@@ -102,14 +103,17 @@ pub async fn change_password(
                 "data": null
             })),
         ),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": "Failed to update password",
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(user_id = %user_id, error = ?e, "failed to update password");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "Failed to update password",
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -120,7 +124,8 @@ pub async fn create_client(
 ) -> impl IntoResponse {
     let hashed_password = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
         Ok(h) => h,
-        Err(_) => {
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to hash password for client registration");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
@@ -165,14 +170,17 @@ pub async fn create_client(
                 }).unwrap_or_default()),
             )
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to create client: {}", e),
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to create client");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to create client: {}", e),
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -195,7 +203,8 @@ pub async fn create_client_as_admin(
 
     let hashed_password = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
         Ok(h) => h,
-        Err(_) => {
+        Err(e) => {
+            tracing::error!(admin_id = %claims.sub, error = ?e, "failed to hash password for admin-created client");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
@@ -237,14 +246,17 @@ pub async fn create_client_as_admin(
                 }).unwrap_or_default()),
             )
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to create client: {}", e),
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(admin_id = %claims.sub, error = ?e, "failed to create client as admin");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to create client: {}", e),
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -267,7 +279,8 @@ pub async fn create_admin(
 
     let hashed_password = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
         Ok(h) => h,
-        Err(_) => {
+        Err(e) => {
+            tracing::error!(admin_id = %claims.sub, error = ?e, "failed to hash password for admin creation");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
@@ -310,14 +323,17 @@ pub async fn create_admin(
                 }).unwrap_or_default()),
             )
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to create admin: {}", e),
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(admin_id = %claims.sub, error = ?e, "failed to create admin");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to create admin: {}", e),
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -419,14 +435,17 @@ pub async fn get_all_users(
                 }).unwrap_or_default()),
             )
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to get users: {}", e),
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to get all users");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to get users: {}", e),
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -473,14 +492,17 @@ pub async fn update_user(
                 }).unwrap_or_default()),
             )
         }
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": "Failed to update user",
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(user_id = %user_id, error = ?e, "failed to update user");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "Failed to update user",
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -510,14 +532,25 @@ pub async fn delete_user(
                 "data": null
             })),
         ),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+        Err(DeleteUserError::HasDependents) => (
+            StatusCode::CONFLICT,
             Json(serde_json::json!({
                 "success": false,
-                "message": "Failed to delete user",
+                "message": "User has pets or appointments; remove those first or cancel the deletion.",
                 "data": null
             })),
         ),
+        Err(DeleteUserError::Sqlx(e)) => {
+            tracing::error!(user_id = %user_id, error = ?e, "failed to delete user");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "Failed to delete user",
+                    "data": null
+                })),
+            )
+        }
     }
 }
 

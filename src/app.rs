@@ -4,6 +4,14 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::{db, routes, state::{AppState, CachedImage}};
 
 pub async fn run() {
+    tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn")),
+        )
+        .init();
+
     let db_pool = db::connect().await.expect("Failed to connect to database!");
 
     let image_cache: Cache<uuid::Uuid, CachedImage> = Cache::builder()
@@ -29,6 +37,6 @@ pub async fn run() {
         .await
         .expect("Listener bind failed");
 
-    println!("Server running on {}", &addr);
+    tracing::info!(addr = %addr, "server running");
     axum::serve(listener, app).await.expect("Server failed");
 }

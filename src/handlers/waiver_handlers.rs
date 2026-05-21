@@ -50,10 +50,13 @@ pub async fn get_active_waiver(
     match waiver_repo::get_active(&state.db_pool).await {
         Ok(Some(t)) => ok(StatusCode::OK, "Active waiver", t),
         Ok(None) => error(StatusCode::NOT_FOUND, "No active waiver template configured"),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load waiver: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to load active waiver");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load waiver: {}", e),
+            )
+        }
     }
 }
 
@@ -67,10 +70,13 @@ pub async fn list_templates(
     }
     match waiver_repo::list_all(&state.db_pool).await {
         Ok(list) => ok(StatusCode::OK, "Templates", list),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to list templates: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to list waiver templates");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to list templates: {}", e),
+            )
+        }
     }
 }
 
@@ -111,10 +117,13 @@ pub async fn create_template(
             .await;
             ok(StatusCode::CREATED, "Template created", t)
         }
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create template: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(actor = %claims.sub, error = ?e, "failed to create waiver template");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to create template: {}", e),
+            )
+        }
     }
 }
 
@@ -145,10 +154,13 @@ pub async fn activate_template(
             .await;
             ok(StatusCode::OK, "Template activated", t)
         }
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to activate template: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(template_id = %id, actor = %claims.sub, error = ?e, "failed to activate waiver template");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to activate template: {}", e),
+            )
+        }
     }
 }
 
@@ -181,9 +193,12 @@ pub async fn list_audit_logs(
     }
     match audit_repo::list_recent(&state.db_pool, 200).await {
         Ok(list) => ok(StatusCode::OK, "Audit logs", list),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to list audit logs: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to list audit logs");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to list audit logs: {}", e),
+            )
+        }
     }
 }

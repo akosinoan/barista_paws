@@ -1,10 +1,17 @@
 use axum::{
-    extract::{Json, Path, State},
+    extract::{Json, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
 use chrono::Utc;
+use serde::Deserialize;
 use uuid::Uuid;
+
+#[derive(Debug, Deserialize, Default)]
+pub struct IncludeDeletedQuery {
+    #[serde(default)]
+    pub include_deleted: bool,
+}
 
 use crate::{
     appointments::config,
@@ -147,6 +154,7 @@ pub async fn create_appointment(
             }
             Ok(false) => {}
             Err(e) => {
+                tracing::error!(owner_id = %owner_id, date = %payload.appointment_date, slot = %payload.time_slot, error = ?e, "failed to check timeslot availability");
                 return error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Failed to check timeslot availability: {}", e),
@@ -158,6 +166,7 @@ pub async fn create_appointment(
     let mut tx = match state.db_pool.begin().await {
         Ok(t) => t,
         Err(e) => {
+            tracing::error!(owner_id = %owner_id, error = ?e, "failed to begin transaction for create_appointment");
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to begin transaction: {}", e),
@@ -168,6 +177,7 @@ pub async fn create_appointment(
     let appointment_id = match appointment_repo::insert_in_tx(&mut tx, &owner_id, &payload).await {
         Ok(id) => id,
         Err(e) => {
+            tracing::error!(owner_id = %owner_id, error = ?e, "failed to insert appointment");
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to create appointment: {}", e),
@@ -211,6 +221,7 @@ pub async fn create_appointment(
             user_agent: Some(meta.user_agent.clone()),
         };
         if let Err(e) = audit_repo::insert_in_tx(&mut tx, &audit).await {
+            tracing::error!(appointment_id = %appointment_id, error = ?e, "failed to write audit log for admin-booked appointment");
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to write audit log: {}", e),
@@ -219,6 +230,7 @@ pub async fn create_appointment(
     }
 
     if let Err(e) = tx.commit().await {
+        tracing::error!(appointment_id = %appointment_id, error = ?e, "failed to commit create_appointment transaction");
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to commit transaction: {}", e),
@@ -227,10 +239,13 @@ pub async fn create_appointment(
 
     match appointment_repo::get_by_id(&state.db_pool, &appointment_id).await {
         Ok(appt) => ok(StatusCode::CREATED, "Appointment requested", appt),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to load appointment: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(appointment_id = %appointment_id, error = ?e, "failed to reload appointment after create");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to load appointment: {}", e),
+            )
+        }
     }
 }
 
@@ -257,6 +272,7 @@ async fn insert_signed_waiver(
             ));
         }
         Err(e) => {
+            tracing::error!(appointment_id = %appointment_id, error = ?e, "failed to load active waiver");
             return Err(error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to load active waiver: {}", e),
@@ -320,6 +336,7 @@ async fn insert_signed_waiver(
     };
 
     if let Err(e) = waiver_repo::insert_signed_in_tx(tx, &signed_insert).await {
+        tracing::error!(appointment_id = %appointment_id, error = ?e, "failed to insert signed waiver");
         return Err(error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to record signed waiver: {}", e),
@@ -342,6 +359,7 @@ async fn insert_signed_waiver(
         user_agent: Some(meta.user_agent.clone()),
     };
     if let Err(e) = audit_repo::insert_in_tx(tx, &audit).await {
+        tracing::error!(appointment_id = %appointment_id, error = ?e, "failed to write audit log for signed waiver");
         return Err(error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to write audit log: {}", e),
@@ -397,6 +415,7 @@ pub async fn sign_appointment_waiver(
     let mut tx = match state.db_pool.begin().await {
         Ok(t) => t,
         Err(e) => {
+            tracing::error!(appointment_id = %id, error = ?e, "failed to begin transaction for sign_appointment_waiver");
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to begin transaction: {}", e),
@@ -423,6 +442,7 @@ pub async fn sign_appointment_waiver(
     }
 
     if let Err(e) = tx.commit().await {
+        tracing::error!(appointment_id = %id, error = ?e, "failed to commit sign_appointment_waiver transaction");
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to commit transaction: {}", e),
@@ -431,10 +451,13 @@ pub async fn sign_appointment_waiver(
 
     match appointment_repo::get_by_id(&state.db_pool, &id).await {
         Ok(a) => ok(StatusCode::OK, "Waiver signed", a),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to reload appointment: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(appointment_id = %id, error = ?e, "failed to reload appointment after waiver sign");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to reload appointment: {}", e),
+            )
+        }
     }
 }
 
@@ -443,6 +466,7 @@ pub async fn list_client_appointments(
     AuthUser(claims): AuthUser,
     State(state): State<AppState>,
     Path(owner_id): Path<Uuid>,
+    Query(q): Query<IncludeDeletedQuery>,
 ) -> impl IntoResponse {
     if claims.role != "admin" && claims.sub != owner_id {
         return error(
@@ -451,12 +475,17 @@ pub async fn list_client_appointments(
         );
     }
 
-    match appointment_repo::list_by_client(&state.db_pool, &owner_id).await {
+    let include_deleted = q.include_deleted && claims.role == "admin";
+
+    match appointment_repo::list_by_client(&state.db_pool, &owner_id, include_deleted).await {
         Ok(list) => ok(StatusCode::OK, "Appointments retrieved", list),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to list appointments: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(owner_id = %owner_id, error = ?e, "failed to list appointments by client");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to list appointments: {}", e),
+            )
+        }
     }
 }
 
@@ -464,17 +493,21 @@ pub async fn list_client_appointments(
 pub async fn list_all_appointments(
     AuthUser(claims): AuthUser,
     State(state): State<AppState>,
+    Query(q): Query<IncludeDeletedQuery>,
 ) -> impl IntoResponse {
     if claims.role != "admin" {
         return error(StatusCode::FORBIDDEN, "Access denied: admin only");
     }
 
-    match appointment_repo::list_all(&state.db_pool).await {
+    match appointment_repo::list_all(&state.db_pool, q.include_deleted).await {
         Ok(list) => ok(StatusCode::OK, "Appointments retrieved", list),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to list appointments: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(error = ?e, "failed to list all appointments");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to list appointments: {}", e),
+            )
+        }
     }
 }
 
@@ -568,10 +601,13 @@ pub async fn update_appointment(
 
     match appointment_repo::update_appointment(&state.db_pool, &id, &payload, &claims.sub).await {
         Ok(appt) => ok(StatusCode::OK, "Appointment updated", appt),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to update appointment: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(appointment_id = %id, error = ?e, "failed to update appointment");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to update appointment: {}", e),
+            )
+        }
     }
 }
 
@@ -593,7 +629,7 @@ pub async fn delete_appointment(
     }
 
     match appointment_repo::delete(&state.db_pool, &id).await {
-        Ok(()) => (
+        Ok(_) => (
             StatusCode::OK,
             Json(serde_json::json!({
                 "success": true,
@@ -601,10 +637,13 @@ pub async fn delete_appointment(
                 "data": null,
             })),
         ),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to delete appointment: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(appointment_id = %id, error = ?e, "failed to delete appointment");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to delete appointment: {}", e),
+            )
+        }
     }
 }
 
@@ -660,10 +699,13 @@ pub async fn cancel_appointment(
 
     match appointment_repo::set_status(&state.db_pool, &id, "cancelled", &claims.sub).await {
         Ok(appt) => ok(StatusCode::OK, "Appointment cancelled", appt),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to cancel appointment: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(appointment_id = %id, error = ?e, "failed to cancel appointment");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to cancel appointment: {}", e),
+            )
+        }
     }
 }
 
@@ -686,10 +728,13 @@ pub async fn get_appointment_history(
 
     match appointment_repo::list_history(&state.db_pool, &id).await {
         Ok(entries) => ok(StatusCode::OK, "Appointment history", entries),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to fetch history: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(appointment_id = %id, error = ?e, "failed to fetch appointment history");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to fetch history: {}", e),
+            )
+        }
     }
 }
 
@@ -706,9 +751,12 @@ async fn admin_set_status(
 
     match appointment_repo::set_status(&state.db_pool, &id, new_status, &claims.sub).await {
         Ok(appt) => ok(StatusCode::OK, success_message, appt),
-        Err(e) => error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to update status: {}", e),
-        ),
+        Err(e) => {
+            tracing::error!(appointment_id = %id, new_status = %new_status, error = ?e, "failed to update appointment status");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to update status: {}", e),
+            )
+        }
     }
 }

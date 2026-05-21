@@ -1,8 +1,9 @@
 use axum::{
-    extract::{Json, Path, State},
+    extract::{Json, Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
@@ -11,6 +12,12 @@ use crate::{
     repository::pet_repo,
     AppState,
 };
+
+#[derive(Debug, Deserialize, Default)]
+pub struct IncludeDeletedQuery {
+    #[serde(default)]
+    pub include_deleted: bool,
+}
 
 /// Auth required. Client can only add pets for themselves. Admin can add for any user.
 pub async fn create_pet(
@@ -39,14 +46,17 @@ pub async fn create_pet(
                 data: Some(pet),
             }).unwrap_or_default()),
         ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to create pet: {}", e),
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(owner_id = %owner_id, error = ?e, "failed to create pet");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to create pet: {}", e),
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -55,6 +65,7 @@ pub async fn get_pets_by_owner(
     AuthUser(claims): AuthUser,
     State(state): State<AppState>,
     Path(owner_id): Path<Uuid>,
+    Query(q): Query<IncludeDeletedQuery>,
 ) -> impl IntoResponse {
     if claims.role != "admin" && claims.sub != owner_id {
         return (
@@ -67,7 +78,9 @@ pub async fn get_pets_by_owner(
         );
     }
 
-    match pet_repo::get_pets_by_owner(&state.db_pool, &owner_id).await {
+    let include_deleted = q.include_deleted && claims.role == "admin";
+
+    match pet_repo::get_pets_by_owner(&state.db_pool, &owner_id, include_deleted).await {
         Ok(pets) => (
             StatusCode::OK,
             Json(serde_json::to_value(crate::models::api_response::ApiResponse {
@@ -76,14 +89,17 @@ pub async fn get_pets_by_owner(
                 data: Some(pets),
             }).unwrap_or_default()),
         ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": format!("Failed to get pets: {}", e),
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(owner_id = %owner_id, error = ?e, "failed to get pets by owner");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("Failed to get pets: {}", e),
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -167,14 +183,17 @@ pub async fn update_pet(
                 data: Some(pet),
             }).unwrap_or_default()),
         ),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": "Failed to update pet",
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(pet_id = %pet_id, error = ?e, "failed to update pet");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "Failed to update pet",
+                    "data": null
+                })),
+            )
+        }
     }
 }
 
@@ -210,7 +229,7 @@ pub async fn delete_pet(
     }
 
     match pet_repo::delete_pet(&state.db_pool, &pet_id).await {
-        Ok(()) => (
+        Ok(_) => (
             StatusCode::OK,
             Json(serde_json::json!({
                 "success": true,
@@ -218,13 +237,16 @@ pub async fn delete_pet(
                 "data": null
             })),
         ),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": "Failed to delete pet",
-                "data": null
-            })),
-        ),
+        Err(e) => {
+            tracing::error!(pet_id = %pet_id, error = ?e, "failed to delete pet");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "Failed to delete pet",
+                    "data": null
+                })),
+            )
+        }
     }
 }

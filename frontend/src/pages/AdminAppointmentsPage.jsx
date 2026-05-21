@@ -26,10 +26,12 @@ export default function AdminAppointmentsPage() {
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [includeDeleted, setIncludeDeleted] = useState(false);
 
   const fetchData = async () => {
+    setLoading(true);
     const [apptRes, userRes] = await Promise.all([
-      getAllAppointments(),
+      getAllAppointments({ includeDeleted }),
       getUsers(),
     ]);
     if (apptRes.success) setAppointments(apptRes.data || []);
@@ -48,7 +50,8 @@ export default function AdminAppointmentsPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeDeleted]);
 
   const updateOne = (updated) => {
     setAppointments((cur) => cur.map((a) => (a.id === updated.id ? updated : a)));
@@ -212,6 +215,17 @@ export default function AdminAppointmentsPage() {
               </div>
             </div>
           </div>
+          <div className="mb-3">
+            <label className="inline-flex items-center gap-2 text-sm text-(--color-muted-foreground) cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeDeleted}
+                onChange={(e) => setIncludeDeleted(e.target.checked)}
+                className="rounded border-(--color-input)"
+              />
+              Show deleted appointments
+            </label>
+          </div>
           {hasFilters && (
             <div className="mb-4 flex items-center justify-between text-xs text-(--color-muted-foreground)">
               <span>
@@ -233,8 +247,16 @@ export default function AdminAppointmentsPage() {
           ) : (
             <div className="space-y-3">
               {filtered.map((appt) => (
-                <AppointmentCard
+                <div
                   key={appt.id}
+                  className={appt.deleted_at ? 'opacity-50 relative' : undefined}
+                >
+                  {appt.deleted_at && (
+                    <span className="absolute top-2 right-2 z-10 text-xs px-2 py-0.5 rounded-full bg-(--color-destructive) text-(--color-destructive-foreground) font-medium">
+                      Deleted
+                    </span>
+                  )}
+                <AppointmentCard
                   appointment={appt}
                   clientName={clients[appt.client_id]}
                   onApprove={handleApprove}
@@ -245,6 +267,7 @@ export default function AdminAppointmentsPage() {
                   onClientClick={setSelectedClientId}
                   highlight={appt.appointment_date === today}
                 />
+                </div>
               ))}
             </div>
           )}
