@@ -7,9 +7,14 @@ import {
   CheckCheck,
   FileSignature,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { Alert, Button, Modal } from './ui';
-import { getSignedWaiver, signAppointmentWaiver } from '../lib/api';
+import {
+  getSignedWaiver,
+  signAppointmentWaiver,
+  getAppointmentHistory,
+} from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 import WaiverModal from './scheduling/WaiverModal';
 
@@ -51,6 +56,9 @@ export default function AppointmentCard({
   onReject,
   onComplete,
   onUpdated,
+  onPetClick,
+  onClientClick,
+  highlight = false,
 }) {
   const {
     id,
@@ -61,6 +69,8 @@ export default function AppointmentCard({
     pets,
     client_id,
     waiver_signed,
+    status_changed_by_name,
+    status_changed_at,
   } = appointment;
 
   const { user, isAdmin } = useAuth();
@@ -74,8 +84,60 @@ export default function AppointmentCard({
   const [signOpen, setSignOpen] = useState(false);
   const [signing, setSigning] = useState(false);
   const [signError, setSignError] = useState('');
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+
+  const openHistory = async () => {
+    setHistoryOpen(true);
+    setHistoryError('');
+    if (history) return;
+    setHistoryLoading(true);
+    const res = await getAppointmentHistory(id);
+    setHistoryLoading(false);
+    if (res?.success) setHistory(res.data || []);
+    else setHistoryError(res?.message || 'Failed to load history');
+  };
 
   const petLabels = (pets || []).map((p) => p.name);
+
+  const STANDARD_FROM = {
+    approved: ['pending'],
+    rejected: ['pending'],
+    completed: ['approved'],
+    cancelled: ['pending', 'approved'],
+  };
+
+  const ACTION_DEFS = [
+    { target: 'approved', handler: onApprove, label: 'Approve', icon: Check, variant: 'outline' },
+    { target: 'rejected', handler: onReject, label: 'Reject', icon: X, variant: 'destructive' },
+    { target: 'completed', handler: onComplete, label: 'Mark Complete', icon: CheckCheck, variant: 'outline' },
+    { target: 'cancelled', handler: onCancel, label: 'Cancel', icon: Trash2, variant: 'destructive' },
+  ];
+
+  const runAction = (target, action) => {
+    const isStandard = STANDARD_FROM[target]?.includes(status);
+    if (!isStandard) {
+      const ok = confirm(
+        `This appointment is currently "${status}". Are you sure you want to change it to "${target}"?`,
+      );
+      if (!ok) return;
+    }
+    setOverrideOpen(false);
+    action(id);
+  };
+
+  const visibleActions = ACTION_DEFS.filter(
+    (a) => a.handler && status !== a.target,
+  );
+  const standardActions = visibleActions.filter((a) =>
+    STANDARD_FROM[a.target]?.includes(status),
+  );
+  const overrideActions = visibleActions.filter(
+    (a) => !STANDARD_FROM[a.target]?.includes(status),
+  );
 
   const handleSign = async (payload) => {
     setSigning(true);
@@ -102,7 +164,13 @@ export default function AppointmentCard({
   };
 
   return (
-    <div className="border border-(--color-border) rounded-lg bg-(--color-card) text-(--color-card-foreground) p-4">
+    <div
+      className={`rounded-lg bg-(--color-card) text-(--color-card-foreground) p-4 ${
+        highlight
+          ? 'border-2 border-(--color-primary) ring-2 ring-(--color-primary)/30 bg-(--color-primary)/5'
+          : 'border border-(--color-border)'
+      }`}
+    >
       <div className="flex justify-between items-start gap-3">
         <div className="flex items-start gap-3">
           <div className="mt-0.5 shrink-0 p-2 rounded-lg bg-(--color-muted) text-(--color-muted-foreground)">
@@ -114,7 +182,18 @@ export default function AppointmentCard({
             </p>
             {clientName && (
               <p className="text-xs text-(--color-muted-foreground) mt-0.5">
-                Client: {clientName}
+                Client:{' '}
+                {onClientClick ? (
+                  <button
+                    type="button"
+                    onClick={() => onClientClick(client_id)}
+                    className="text-(--color-primary) hover:underline cursor-pointer"
+                  >
+                    {clientName}
+                  </button>
+                ) : (
+                  clientName
+                )}
               </p>
             )}
           </div>
@@ -128,19 +207,42 @@ export default function AppointmentCard({
 
       {pets && pets.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {pets.map((pet) => (
-            <span
-              key={pet.id}
-              className="text-xs px-2 py-0.5 rounded-full bg-(--color-secondary) text-(--color-secondary-foreground)"
-            >
-              🐾 {pet.name}
-            </span>
-          ))}
+          {pets.map((pet) =>
+            onPetClick ? (
+              <button
+                key={pet.id}
+                type="button"
+                onClick={() => onPetClick(pet)}
+                className="text-xs px-2 py-0.5 rounded-full bg-(--color-secondary) text-(--color-secondary-foreground) hover:opacity-80 transition-opacity cursor-pointer border-0"
+              >
+                🐾 {pet.name}
+              </button>
+            ) : (
+              <span
+                key={pet.id}
+                className="text-xs px-2 py-0.5 rounded-full bg-(--color-secondary) text-(--color-secondary-foreground)"
+              >
+                🐾 {pet.name}
+              </span>
+            ),
+          )}
         </div>
       )}
 
       {notes && (
         <p className="mt-3 text-sm text-(--color-muted-foreground) italic">{notes}</p>
+      )}
+
+      {status !== 'pending' && (status_changed_by_name || status_changed_at) && (
+        <button
+          type="button"
+          onClick={openHistory}
+          className="mt-2 block text-left text-xs text-(--color-muted-foreground) hover:text-(--color-primary) hover:underline cursor-pointer bg-transparent border-0 p-0"
+        >
+          <span className="capitalize">{status}</span>
+          {status_changed_by_name ? ` by ${status_changed_by_name}` : ''}
+          {status_changed_at ? ` · ${formatTimestamp(status_changed_at)}` : ''}
+        </button>
       )}
 
       {!waiver_signed && (
@@ -173,25 +275,44 @@ export default function AppointmentCard({
             Waiver required from client before service
           </span>
         )}
-        <div className="flex flex-wrap gap-2 justify-end">
-          {onApprove && status === 'pending' && (
-            <Button size="sm" variant="outline" onClick={() => onApprove(id)}>
-              <Check size={14} /> Approve
+        <div className="flex flex-wrap gap-2 justify-end items-center">
+          {standardActions.map((a) => (
+            <Button
+              key={a.target}
+              size="sm"
+              variant={a.variant}
+              onClick={() => runAction(a.target, a.handler)}
+            >
+              <a.icon size={14} /> {a.label}
+            </Button>
+          ))}
+          {overrideActions.length > 0 && !overrideOpen && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setOverrideOpen(true)}
+            >
+              <RefreshCw size={14} /> Change Status
             </Button>
           )}
-          {onReject && status === 'pending' && (
-            <Button size="sm" variant="destructive" onClick={() => onReject(id)}>
-              <X size={14} /> Reject
-            </Button>
-          )}
-          {onComplete && status === 'approved' && (
-            <Button size="sm" variant="outline" onClick={() => onComplete(id)}>
-              <CheckCheck size={14} /> Mark Complete
-            </Button>
-          )}
-          {onCancel && (status === 'pending' || status === 'approved') && (
-            <Button size="sm" variant="destructive" onClick={() => onCancel(id)}>
-              <Trash2 size={14} /> Cancel
+          {overrideOpen &&
+            overrideActions.map((a) => (
+              <Button
+                key={a.target}
+                size="sm"
+                variant={a.variant}
+                onClick={() => runAction(a.target, a.handler)}
+              >
+                <a.icon size={14} /> {a.label}
+              </Button>
+            ))}
+          {overrideOpen && overrideActions.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setOverrideOpen(false)}
+            >
+              <X size={14} /> Close
             </Button>
           )}
         </div>
@@ -390,6 +511,79 @@ export default function AppointmentCard({
           <Button
             variant="outline"
             onClick={() => setWaiverOpen(false)}
+            className="w-full sm:w-auto"
+          >
+            Close
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        labelledBy={`history-title-${id}`}
+      >
+        <div className="px-5 py-4 border-b border-(--color-border) shrink-0">
+          <h2
+            id={`history-title-${id}`}
+            className="text-lg font-semibold text-(--color-foreground)"
+          >
+            Status History
+          </h2>
+          <p className="text-sm text-(--color-muted-foreground) mt-1">
+            {formatDate(appointment_date)} · {formatTime(time_slot)}
+          </p>
+        </div>
+        <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
+          {historyLoading && (
+            <p className="text-sm text-(--color-muted-foreground)">Loading…</p>
+          )}
+          {historyError && <Alert variant="error">{historyError}</Alert>}
+          {history && history.length === 0 && (
+            <p className="text-sm text-(--color-muted-foreground)">
+              No history recorded.
+            </p>
+          )}
+          {history && history.length > 0 && (
+            <ol className="space-y-3">
+              {history.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="border-l-2 border-(--color-border) pl-3"
+                >
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    {entry.from_status ? (
+                      <span className="text-sm text-(--color-foreground)">
+                        <span className="capitalize text-(--color-muted-foreground)">
+                          {entry.from_status}
+                        </span>
+                        {' → '}
+                        <span className="capitalize font-medium">
+                          {entry.to_status}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-sm text-(--color-foreground)">
+                        Created as{' '}
+                        <span className="capitalize font-medium">
+                          {entry.to_status}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-(--color-muted-foreground) mt-0.5">
+                    {entry.changed_by_name || 'Unknown'} ·{' '}
+                    {formatTimestamp(entry.changed_at)}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+        <div className="px-5 py-4 border-t border-(--color-border) flex justify-end shrink-0 bg-(--color-background)">
+          <Button
+            variant="outline"
+            onClick={() => setHistoryOpen(false)}
             className="w-full sm:w-auto"
           >
             Close

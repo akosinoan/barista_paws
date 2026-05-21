@@ -2,7 +2,8 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::models::appointment::{
-    Appointment, AppointmentWithPets, CreateAppointmentRequest, UpdateAppointmentRequest,
+    Appointment, AppointmentStatusHistoryEntry, AppointmentWithPets, CreateAppointmentRequest,
+    UpdateAppointmentRequest,
 };
 use crate::models::pet::Pet;
 
@@ -26,6 +27,8 @@ pub async fn insert_in_tx(
     .bind(&payload.notes)
     .execute(&mut **tx)
     .await?;
+
+    insert_history(tx, &appointment_id, None, "pending", Some(client_id)).await?;
 
     for pet_id in &payload.pet_ids {
         sqlx::query(
@@ -53,8 +56,14 @@ pub async fn create_appointment(
 
 pub async fn get_by_id(pool: &PgPool, id: &Uuid) -> Result<AppointmentWithPets, sqlx::Error> {
     let appointment = sqlx::query_as::<_, Appointment>(
-        r#"SELECT id, client_id, appointment_date, time_slot, status, notes, created_at, updated_at
-           FROM appointments WHERE id = $1"#,
+        r#"SELECT a.id, a.client_id, a.appointment_date, a.time_slot, a.status, a.notes,
+                  a.created_at, a.updated_at,
+                  a.status_changed_by, a.status_changed_at,
+                  CASE WHEN u.id IS NOT NULL THEN u.first_name || ' ' || u.last_name END
+                      AS status_changed_by_name
+           FROM appointments a
+           LEFT JOIN users u ON u.id = a.status_changed_by
+           WHERE a.id = $1"#,
     )
     .bind(id)
     .fetch_one(pool)
@@ -81,9 +90,15 @@ pub async fn list_by_client(
     client_id: &Uuid,
 ) -> Result<Vec<AppointmentWithPets>, sqlx::Error> {
     let appointments = sqlx::query_as::<_, Appointment>(
-        r#"SELECT id, client_id, appointment_date, time_slot, status, notes, created_at, updated_at
-           FROM appointments WHERE client_id = $1
-           ORDER BY appointment_date DESC, time_slot DESC"#,
+        r#"SELECT a.id, a.client_id, a.appointment_date, a.time_slot, a.status, a.notes,
+                  a.created_at, a.updated_at,
+                  a.status_changed_by, a.status_changed_at,
+                  CASE WHEN u.id IS NOT NULL THEN u.first_name || ' ' || u.last_name END
+                      AS status_changed_by_name
+           FROM appointments a
+           LEFT JOIN users u ON u.id = a.status_changed_by
+           WHERE a.client_id = $1
+           ORDER BY a.appointment_date DESC, a.time_slot DESC"#,
     )
     .bind(client_id)
     .fetch_all(pool)
@@ -94,9 +109,14 @@ pub async fn list_by_client(
 
 pub async fn list_all(pool: &PgPool) -> Result<Vec<AppointmentWithPets>, sqlx::Error> {
     let appointments = sqlx::query_as::<_, Appointment>(
-        r#"SELECT id, client_id, appointment_date, time_slot, status, notes, created_at, updated_at
-           FROM appointments
-           ORDER BY appointment_date DESC, time_slot DESC"#,
+        r#"SELECT a.id, a.client_id, a.appointment_date, a.time_slot, a.status, a.notes,
+                  a.created_at, a.updated_at,
+                  a.status_changed_by, a.status_changed_at,
+                  CASE WHEN u.id IS NOT NULL THEN u.first_name || ' ' || u.last_name END
+                      AS status_changed_by_name
+           FROM appointments a
+           LEFT JOIN users u ON u.id = a.status_changed_by
+           ORDER BY a.appointment_date DESC, a.time_slot DESC"#,
     )
     .fetch_all(pool)
     .await?;
@@ -108,8 +128,15 @@ pub async fn update_appointment(
     pool: &PgPool,
     id: &Uuid,
     payload: &UpdateAppointmentRequest,
+    actor_id: &Uuid,
 ) -> Result<AppointmentWithPets, sqlx::Error> {
     let mut tx = pool.begin().await?;
+
+    let prev_status: Option<String> =
+        sqlx::query_scalar(r#"SELECT status FROM appointments WHERE id = $1"#)
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
     sqlx::query(
         r#"
@@ -118,6 +145,8 @@ pub async fn update_appointment(
             time_slot = COALESCE($3, time_slot),
             notes = COALESCE($4, notes),
             status = COALESCE($5, status),
+            status_changed_by = CASE WHEN $5 IS NOT NULL THEN $6 ELSE status_changed_by END,
+            status_changed_at = CASE WHEN $5 IS NOT NULL THEN now() ELSE status_changed_at END,
             updated_at = now()
         WHERE id = $1
         "#,
@@ -127,8 +156,22 @@ pub async fn update_appointment(
     .bind(&payload.time_slot)
     .bind(&payload.notes)
     .bind(&payload.status)
+    .bind(actor_id)
     .execute(&mut *tx)
     .await?;
+
+    if let Some(new_status) = &payload.status
+        && prev_status.as_deref() != Some(new_status.as_str())
+    {
+        insert_history(
+            &mut tx,
+            id,
+            prev_status.as_deref(),
+            new_status,
+            Some(actor_id),
+        )
+        .await?;
+    }
 
     if let Some(pet_ids) = &payload.pet_ids {
         sqlx::query(r#"DELETE FROM appointment_pets WHERE appointment_id = $1"#)
@@ -156,16 +199,77 @@ pub async fn set_status(
     pool: &PgPool,
     id: &Uuid,
     new_status: &str,
+    actor_id: &Uuid,
 ) -> Result<AppointmentWithPets, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let from_status: Option<String> =
+        sqlx::query_scalar(r#"SELECT status FROM appointments WHERE id = $1"#)
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
     sqlx::query(
-        r#"UPDATE appointments SET status = $2, updated_at = now() WHERE id = $1"#,
+        r#"UPDATE appointments
+           SET status = $2,
+               status_changed_by = $3,
+               status_changed_at = now(),
+               updated_at = now()
+           WHERE id = $1"#,
     )
     .bind(id)
     .bind(new_status)
-    .execute(pool)
+    .bind(actor_id)
+    .execute(&mut *tx)
     .await?;
 
+    if from_status.as_deref() != Some(new_status) {
+        insert_history(&mut tx, id, from_status.as_deref(), new_status, Some(actor_id)).await?;
+    }
+
+    tx.commit().await?;
+
     get_by_id(pool, id).await
+}
+
+async fn insert_history(
+    tx: &mut Transaction<'_, Postgres>,
+    appointment_id: &Uuid,
+    from_status: Option<&str>,
+    to_status: &str,
+    actor_id: Option<&Uuid>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"INSERT INTO appointment_status_history
+                (appointment_id, from_status, to_status, changed_by)
+           VALUES ($1, $2, $3, $4)"#,
+    )
+    .bind(appointment_id)
+    .bind(from_status)
+    .bind(to_status)
+    .bind(actor_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_history(
+    pool: &PgPool,
+    appointment_id: &Uuid,
+) -> Result<Vec<AppointmentStatusHistoryEntry>, sqlx::Error> {
+    sqlx::query_as::<_, AppointmentStatusHistoryEntry>(
+        r#"SELECT h.id, h.appointment_id, h.from_status, h.to_status, h.changed_by,
+                  CASE WHEN u.id IS NOT NULL THEN u.first_name || ' ' || u.last_name END
+                      AS changed_by_name,
+                  h.changed_at
+           FROM appointment_status_history h
+           LEFT JOIN users u ON u.id = h.changed_by
+           WHERE h.appointment_id = $1
+           ORDER BY h.changed_at DESC"#,
+    )
+    .bind(appointment_id)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn delete(pool: &PgPool, id: &Uuid) -> Result<(), sqlx::Error> {
@@ -181,7 +285,7 @@ async fn fetch_pets_for_appointment(
     appointment_id: &Uuid,
 ) -> Result<Vec<Pet>, sqlx::Error> {
     sqlx::query_as::<_, Pet>(
-        r#"SELECT p.id, p.owner_id, p.name, p.species, p.breed, p.age, p.weight, p.notes, p.photo_url, p.created_at, p.updated_at
+        r#"SELECT p.id, p.owner_id, p.name, p.species, p.breed, p.age, p.weight, p.notes, p.photo_image_id, p.created_at, p.updated_at
            FROM pets p
            INNER JOIN appointment_pets ap ON ap.pet_id = p.id
            WHERE ap.appointment_id = $1

@@ -44,7 +44,15 @@ pub fn router() -> Router<AppState> {
             post(appointment_handlers::complete_appointment),
         )
         .route(
+            "/api/appointments/{id}/cancel",
+            post(appointment_handlers::cancel_appointment),
+        )
+        .route(
             "/api/appointments/{id}/sign-waiver",
             post(appointment_handlers::sign_appointment_waiver),
+        )
+        .route(
+            "/api/appointments/{id}/history",
+            get(appointment_handlers::get_appointment_history),
         )
 }

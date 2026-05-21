@@ -16,4 +16,5 @@ pub fn router() -> Router<AppState> {
         .route("/api/users/{user_id}", delete(user_handlers::delete_user))
         .route("/api/users/{user_id}/password", put(user_handlers::change_password))
         .route("/api/users/{user_id}/avatar", post(upload_handlers::upload_user_avatar))
+        .route("/api/users/{user_id}/avatar", get(upload_handlers::get_user_avatar))
 }

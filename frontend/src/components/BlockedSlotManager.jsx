@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   getBlockedTimeslots,
-  blockTimeslot,
+  bulkBlockTimeslots,
+  bulkUnblockTimeslots,
   unblockTimeslot,
 } from '../lib/api';
 import { Button, Input, Label, Alert } from './ui';
@@ -21,15 +22,19 @@ function formatDate(iso) {
   }
 }
 
+const keyOf = (iso, slot) => `${iso} ${slot}`;
+
 export default function BlockedSlotManager() {
   const [blocked, setBlocked] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState(null); // { iso, slot }
+  // pending: Map<key, { iso, slot }>
+  const [pending, setPending] = useState(new Map());
   const [reason, setReason] = useState('');
   const [wholeDay, setWholeDay] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [refreshToken, setRefreshToken] = useState(0);
+  const [selectedUnblockIds, setSelectedUnblockIds] = useState(new Set());
 
   const reload = () => {
     getBlockedTimeslots().then((res) => {
@@ -42,19 +47,31 @@ export default function BlockedSlotManager() {
     reload();
   }, []);
 
-  const findBlock = (iso, slot) => {
-    return blocked.find(
+  const selectedKeys = useMemo(() => new Set(pending.keys()), [pending]);
+
+  const findBlock = (iso, slot) =>
+    blocked.find(
       (b) =>
         b.blocked_date === iso &&
         (b.time_slot === slot || b.time_slot === slot.slice(0, 5)),
     );
-  };
   const findWholeDayBlock = (iso) =>
     blocked.find((b) => b.blocked_date === iso && b.time_slot === null);
 
-  const handleSlotClick = async (iso, slot, currentlyBlocked) => {
+  const togglePending = (iso, slot) => {
+    setPending((cur) => {
+      const next = new Map(cur);
+      const key = keyOf(iso, slot);
+      if (next.has(key)) next.delete(key);
+      else next.set(key, { iso, slot });
+      return next;
+    });
+  };
+
+  const handleSlotClick = async (iso, slot, state) => {
     setError('');
-    if (currentlyBlocked) {
+    if (state === 'blocked') {
+      // Unblock immediately (single).
       const exact = findBlock(iso, slot);
       const whole = findWholeDayBlock(iso);
       const target = exact || whole;
@@ -73,38 +90,84 @@ export default function BlockedSlotManager() {
       } else {
         setError(res.message || 'Failed to unblock.');
       }
-    } else {
-      setPending({ iso, slot });
-      setReason('');
-      setWholeDay(false);
+      return;
+    }
+    if (state === 'available' || state === 'selected') {
+      togglePending(iso, slot);
     }
   };
 
-  const cancelPending = () => {
-    setPending(null);
+  const clearPending = () => {
+    setPending(new Map());
     setReason('');
     setWholeDay(false);
   };
 
   const confirmBlock = async (e) => {
     e.preventDefault();
-    if (!pending) return;
+    if (pending.size === 0) return;
     setSubmitting(true);
     setError('');
-    const res = await blockTimeslot({
-      blocked_date: pending.iso,
-      time_slot: wholeDay ? null : normalizeSlot(pending.slot),
-      reason: reason || null,
-    });
+
+    let slots;
+    if (wholeDay) {
+      const dates = Array.from(new Set(Array.from(pending.values()).map((p) => p.iso)));
+      slots = dates.map((iso) => ({
+        blocked_date: iso,
+        time_slot: null,
+        reason: reason || null,
+      }));
+    } else {
+      slots = Array.from(pending.values()).map(({ iso, slot }) => ({
+        blocked_date: iso,
+        time_slot: normalizeSlot(slot),
+        reason: reason || null,
+      }));
+    }
+
+    const res = await bulkBlockTimeslots(slots);
     setSubmitting(false);
     if (res.success) {
-      setBlocked((cur) => [res.data, ...cur]);
+      setBlocked((cur) => [...(res.data || []), ...cur]);
       setRefreshToken((t) => t + 1);
-      cancelPending();
+      clearPending();
     } else {
-      setError(res.message || 'Failed to block timeslot');
+      setError(res.message || 'Failed to block timeslots');
     }
   };
+
+  const toggleUnblockId = (id) => {
+    setSelectedUnblockIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllUnblocks = () => {
+    setSelectedUnblockIds((cur) => {
+      if (cur.size === blocked.length) return new Set();
+      return new Set(blocked.map((b) => b.id));
+    });
+  };
+
+  const handleBulkUnblock = async () => {
+    if (selectedUnblockIds.size === 0) return;
+    if (!confirm(`Unblock ${selectedUnblockIds.size} timeslot(s)?`)) return;
+    const ids = Array.from(selectedUnblockIds);
+    const res = await bulkUnblockTimeslots(ids);
+    if (res.success) {
+      setBlocked((cur) => cur.filter((b) => !selectedUnblockIds.has(b.id)));
+      setSelectedUnblockIds(new Set());
+      setRefreshToken((t) => t + 1);
+    } else {
+      setError(res.message || 'Failed to bulk unblock');
+    }
+  };
+
+  const allSelected =
+    blocked.length > 0 && selectedUnblockIds.size === blocked.length;
 
   return (
     <div className="space-y-4">
@@ -113,25 +176,57 @@ export default function BlockedSlotManager() {
       <WeeklyCalendar
         mode="block"
         onSlotClick={handleSlotClick}
+        selectedKeys={selectedKeys}
         loading={submitting}
         refreshToken={refreshToken}
       />
 
-      {pending && (
+      {pending.size > 0 && (
         <form
           onSubmit={confirmBlock}
           className="rounded-xl border border-(--color-border) bg-(--color-card) p-4 space-y-3"
         >
-          <div className="text-sm">
-            <span className="text-(--color-muted-foreground)">Blocking: </span>
-            <span className="font-medium text-(--color-foreground)">
-              {parseIsoDate(pending.iso).toLocaleDateString(undefined, {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-              })}{' '}
-              · {formatSlot12(pending.slot)}
-            </span>
+          <div className="flex items-center justify-between">
+            <div className="text-sm">
+              <span className="text-(--color-muted-foreground)">Selected: </span>
+              <span className="font-medium text-(--color-foreground)">
+                {pending.size} timeslot{pending.size === 1 ? '' : 's'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={clearPending}
+              disabled={submitting}
+              className="text-xs text-(--color-primary) hover:underline cursor-pointer disabled:opacity-50"
+            >
+              Clear selection
+            </button>
+          </div>
+
+          <div className="max-h-32 overflow-y-auto text-xs text-(--color-muted-foreground) space-y-1 border border-(--color-border) rounded-md p-2">
+            {Array.from(pending.values())
+              .sort((a, b) =>
+                a.iso === b.iso ? a.slot.localeCompare(b.slot) : a.iso.localeCompare(b.iso),
+              )
+              .map(({ iso, slot }) => (
+                <div key={keyOf(iso, slot)} className="flex items-center justify-between">
+                  <span>
+                    {parseIsoDate(iso).toLocaleDateString(undefined, {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    })}{' '}
+                    · {formatSlot12(slot)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => togglePending(iso, slot)}
+                    className="text-(--color-destructive) hover:underline cursor-pointer"
+                  >
+                    remove
+                  </button>
+                </div>
+              ))}
           </div>
 
           <label className="flex items-center gap-2 text-sm text-(--color-foreground) cursor-pointer">
@@ -141,11 +236,11 @@ export default function BlockedSlotManager() {
               onChange={(e) => setWholeDay(e.target.checked)}
               className="w-4 h-4 accent-(--color-primary)"
             />
-            Block the entire day instead
+            Block whole day for each selected date instead
           </label>
 
           <div>
-            <Label>Reason</Label>
+            <Label>Reason (applies to all)</Label>
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
@@ -158,22 +253,47 @@ export default function BlockedSlotManager() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={cancelPending}
+              onClick={clearPending}
               disabled={submitting}
             >
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={submitting}>
-              {submitting ? 'Blocking...' : 'Confirm Block'}
+              {submitting
+                ? 'Blocking...'
+                : `Block ${pending.size} timeslot${pending.size === 1 ? '' : 's'}`}
             </Button>
           </div>
         </form>
       )}
 
       <div className="pt-4 border-t border-(--color-border)">
-        <h3 className="text-sm font-semibold mb-3 text-(--color-foreground)">
-          Active Blocks
-        </h3>
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+          <h3 className="text-sm font-semibold text-(--color-foreground)">
+            Active Blocks
+          </h3>
+          {blocked.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-xs text-(--color-muted-foreground) cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAllUnblocks}
+                  className="w-4 h-4 accent-(--color-primary)"
+                />
+                Select all
+              </label>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleBulkUnblock}
+                disabled={selectedUnblockIds.size === 0}
+              >
+                <Trash2 size={14} /> Unblock selected ({selectedUnblockIds.size})
+              </Button>
+            </div>
+          )}
+        </div>
         {loading ? (
           <p className="text-sm text-(--color-muted-foreground)">Loading...</p>
         ) : blocked.length === 0 ? (
@@ -185,16 +305,25 @@ export default function BlockedSlotManager() {
                 key={b.id}
                 className="flex items-center justify-between gap-3 p-3 border border-(--color-border) rounded-lg"
               >
-                <div className="text-sm">
-                  <p className="font-medium text-(--color-foreground)">
-                    {formatDate(b.blocked_date)}
-                    {b.time_slot
-                      ? ` · ${formatSlot12(b.time_slot.length === 5 ? `${b.time_slot}:00` : b.time_slot)}`
-                      : ' · Whole day'}
-                  </p>
-                  {b.reason && (
-                    <p className="text-xs text-(--color-muted-foreground) mt-0.5">{b.reason}</p>
-                  )}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedUnblockIds.has(b.id)}
+                    onChange={() => toggleUnblockId(b.id)}
+                    className="w-4 h-4 accent-(--color-primary) cursor-pointer"
+                    aria-label="Select for bulk unblock"
+                  />
+                  <div className="text-sm">
+                    <p className="font-medium text-(--color-foreground)">
+                      {formatDate(b.blocked_date)}
+                      {b.time_slot
+                        ? ` · ${formatSlot12(b.time_slot.length === 5 ? `${b.time_slot}:00` : b.time_slot)}`
+                        : ' · Whole day'}
+                    </p>
+                    {b.reason && (
+                      <p className="text-xs text-(--color-muted-foreground) mt-0.5">{b.reason}</p>
+                    )}
+                  </div>
                 </div>
                 <Button
                   size="sm"
@@ -204,6 +333,11 @@ export default function BlockedSlotManager() {
                     const res = await unblockTimeslot(b.id);
                     if (res.success) {
                       setBlocked((cur) => cur.filter((x) => x.id !== b.id));
+                      setSelectedUnblockIds((cur) => {
+                        const next = new Set(cur);
+                        next.delete(b.id);
+                        return next;
+                      });
                       setRefreshToken((t) => t + 1);
                     }
                   }}

@@ -13,7 +13,7 @@ pub struct User {
     pub last_name: String,
     pub phone_number: Option<String>,
     pub address: Option<String>,
-    pub avatar_url: Option<String>,
+    pub avatar_image_id: Option<Uuid>,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -124,5 +124,9 @@ pub struct AdminResponse {
 impl User {
     pub fn validate_email(email: &str) -> bool {
         email.contains('@') && email.contains('.')
+    }
+
+    pub fn avatar_url(&self) -> Option<String> {
+        self.avatar_image_id.map(|img| format!("/api/users/{}/avatar?v={}", self.id, img))
     }
 }

@@ -71,7 +71,7 @@ pub async fn login(
             last_name: user.last_name,
             phone_number: user.phone_number,
             address: user.address,
-            avatar_url: user.avatar_url,
+            avatar_url: user.avatar_image_id.map(|img| format!("/api/users/{}/avatar?v={}", user.id, img)),
             role,
             created_at: user.created_at,
         },

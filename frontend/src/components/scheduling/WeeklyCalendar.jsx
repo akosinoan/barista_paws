@@ -28,6 +28,7 @@ export default function WeeklyCalendar({
   onChange,
   onSlotClick,
   blockedSet,
+  selectedKeys,
   allowOverride = false,
   initialWeekStart,
   loading: externalLoading = false,
@@ -62,6 +63,7 @@ export default function WeeklyCalendar({
   const getCellState = (iso, slot) => {
     if (isPastSlot(iso, slot, today)) return 'past';
     const key = `${iso} ${slot}`;
+    if (selectedKeys && selectedKeys.has(key)) return 'selected';
     if (blockedSet && blockedSet.has(key)) return 'blocked';
     const avail = daysMap[iso];
     if (avail) {
@@ -90,7 +92,7 @@ export default function WeeklyCalendar({
         })} at ${formatSlot12(slot)}`,
       );
     } else if (mode === 'block') {
-      onSlotClick && onSlotClick(iso, slot, state === 'blocked');
+      onSlotClick && onSlotClick(iso, slot, state);
     }
   };
 
@@ -169,6 +171,14 @@ export default function WeeklyCalendar({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 text-xs text-(--color-muted-foreground)">
+        <LegendSwatch className="bg-(--color-card) border border-(--color-border)" label="Available" />
+        <LegendSwatch className="bg-(--color-primary)" label={mode === 'block' ? 'Selected' : 'Selected'} />
+        <LegendSwatch className="blocked-stripe border border-(--color-border)" label={mode === 'block' ? 'Blocked (click to unblock)' : 'Blocked'} />
+        <LegendSwatch className="bg-(--color-muted) border border-(--color-border)" label="Past" />
+        <LegendSwatch className="bg-(--color-primary)/20 border border-(--color-primary)" label="Today" />
+      </div>
+
       <div
         className="overflow-x-auto border border-(--color-border) rounded-xl bg-(--color-card)"
         role="region"
@@ -192,7 +202,7 @@ export default function WeeklyCalendar({
                     scope="col"
                     className={classNames(
                       'px-1 py-2 font-medium text-(--color-foreground) border-l border-(--color-border)',
-                      isToday && 'bg-(--color-primary)/5',
+                      isToday && 'bg-(--color-primary)/20 border-x-2 border-x-(--color-primary)',
                     )}
                   >
                     <div className="flex flex-col items-center leading-tight">
@@ -237,7 +247,7 @@ export default function WeeklyCalendar({
                       key={iso + slot}
                       className={classNames(
                         'p-0 border-l border-(--color-border)',
-                        isSameDayIso(iso, today) && 'bg-(--color-primary)/5',
+                        isSameDayIso(iso, today) && 'bg-(--color-primary)/10 border-x-2 border-x-(--color-primary)',
                       )}
                     >
                       <button
@@ -264,7 +274,7 @@ export default function WeeklyCalendar({
                             'cursor-not-allowed text-(--color-muted-foreground) blocked-stripe',
                           mode === 'block' && state === 'blocked' && 'cursor-pointer',
                           mode === 'select' && state === 'blocked' && allowOverride && 'cursor-pointer',
-                          state === 'past' && 'opacity-40 cursor-not-allowed bg-(--color-muted)/40',
+                          state === 'past' && 'cursor-not-allowed bg-(--color-muted) text-(--color-muted-foreground) line-through opacity-70',
                           state === 'loading' && 'animate-pulse bg-(--color-muted)/40',
                         )}
                       />
@@ -275,13 +285,6 @@ export default function WeeklyCalendar({
             ))}
           </tbody>
         </table>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3 text-xs text-(--color-muted-foreground)">
-        <LegendSwatch className="bg-(--color-card) border border-(--color-border)" label="Available" />
-        <LegendSwatch className="bg-(--color-primary)" label={mode === 'block' ? 'Selected' : 'Selected'} />
-        <LegendSwatch className="blocked-stripe border border-(--color-border)" label={mode === 'block' ? 'Blocked (click to unblock)' : 'Blocked'} />
-        <LegendSwatch className="bg-(--color-muted)/60 border border-(--color-border)" label="Past" />
       </div>
 
       {error && (

@@ -566,7 +566,7 @@ pub async fn update_appointment(
         );
     }
 
-    match appointment_repo::update_appointment(&state.db_pool, &id, &payload).await {
+    match appointment_repo::update_appointment(&state.db_pool, &id, &payload, &claims.sub).await {
         Ok(appt) => ok(StatusCode::OK, "Appointment updated", appt),
         Err(e) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -632,6 +632,67 @@ pub async fn complete_appointment(
     admin_set_status(auth, state, path, "completed", "Appointment completed").await
 }
 
+pub async fn cancel_appointment(
+    AuthUser(claims): AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    let existing = match appointment_repo::get_by_id(&state.db_pool, &id).await {
+        Ok(a) => a,
+        Err(_) => return error(StatusCode::NOT_FOUND, "Appointment not found"),
+    };
+
+    if claims.role != "admin" && claims.sub != existing.appointment.client_id {
+        return error(
+            StatusCode::FORBIDDEN,
+            "Access denied: this appointment does not belong to you",
+        );
+    }
+
+    let status = existing.appointment.status.as_str();
+    let is_admin = claims.role == "admin";
+    if !is_admin && status != "pending" && status != "approved" {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "Only pending or approved appointments can be cancelled",
+        );
+    }
+
+    match appointment_repo::set_status(&state.db_pool, &id, "cancelled", &claims.sub).await {
+        Ok(appt) => ok(StatusCode::OK, "Appointment cancelled", appt),
+        Err(e) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to cancel appointment: {}", e),
+        ),
+    }
+}
+
+pub async fn get_appointment_history(
+    AuthUser(claims): AuthUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    let existing = match appointment_repo::get_by_id(&state.db_pool, &id).await {
+        Ok(a) => a,
+        Err(_) => return error(StatusCode::NOT_FOUND, "Appointment not found"),
+    };
+
+    if claims.role != "admin" && claims.sub != existing.appointment.client_id {
+        return error(
+            StatusCode::FORBIDDEN,
+            "Access denied: this appointment does not belong to you",
+        );
+    }
+
+    match appointment_repo::list_history(&state.db_pool, &id).await {
+        Ok(entries) => ok(StatusCode::OK, "Appointment history", entries),
+        Err(e) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to fetch history: {}", e),
+        ),
+    }
+}
+
 async fn admin_set_status(
     AuthUser(claims): AuthUser,
     State(state): State<AppState>,
@@ -643,7 +704,7 @@ async fn admin_set_status(
         return error(StatusCode::FORBIDDEN, "Access denied: admin only");
     }
 
-    match appointment_repo::set_status(&state.db_pool, &id, new_status).await {
+    match appointment_repo::set_status(&state.db_pool, &id, new_status, &claims.sub).await {
         Ok(appt) => ok(StatusCode::OK, success_message, appt),
         Err(e) => error(
             StatusCode::INTERNAL_SERVER_ERROR,

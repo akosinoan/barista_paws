@@ -108,6 +108,12 @@ export const rejectAppointment = (id) =>
 export const completeAppointment = (id) =>
   request(`/appointments/${id}/complete`, { method: 'POST' });
 
+export const cancelAppointment = (id) =>
+  request(`/appointments/${id}/cancel`, { method: 'POST' });
+
+export const getAppointmentHistory = (id) =>
+  request(`/appointments/${id}/history`);
+
 // Waiver API
 export const getActiveWaiver = () => request('/waivers/active');
 
@@ -142,3 +148,15 @@ export const getBlockedTimeslots = (date) =>
 
 export const unblockTimeslot = (id) =>
   request(`/timeslots/blocked/${id}`, { method: 'DELETE' });
+
+export const bulkBlockTimeslots = (slots) =>
+  request('/timeslots/block/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ slots }),
+  });
+
+export const bulkUnblockTimeslots = (ids) =>
+  request('/timeslots/blocked/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });

@@ -28,7 +28,7 @@ pub async fn create_pet(pool: &PgPool, owner_id: &Uuid, payload: &CreatePetReque
 
 pub async fn get_pet_by_id(pool: &PgPool, pet_id: &Uuid) -> Result<Pet, sqlx::Error> {
     sqlx::query_as::<_, Pet>(
-        r#"SELECT id, owner_id, name, species, breed, age, weight, notes, photo_url, created_at, updated_at FROM pets WHERE id = $1"#,
+        r#"SELECT id, owner_id, name, species, breed, age, weight, notes, photo_image_id, created_at, updated_at FROM pets WHERE id = $1"#,
     )
     .bind(pet_id)
     .fetch_one(pool)
@@ -37,11 +37,21 @@ pub async fn get_pet_by_id(pool: &PgPool, pet_id: &Uuid) -> Result<Pet, sqlx::Er
 
 pub async fn get_pets_by_owner(pool: &PgPool, owner_id: &Uuid) -> Result<Vec<Pet>, sqlx::Error> {
     sqlx::query_as::<_, Pet>(
-        r#"SELECT id, owner_id, name, species, breed, age, weight, notes, photo_url, created_at, updated_at FROM pets WHERE owner_id = $1 ORDER BY created_at DESC"#,
+        r#"SELECT id, owner_id, name, species, breed, age, weight, notes, photo_image_id, created_at, updated_at FROM pets WHERE owner_id = $1 ORDER BY created_at DESC"#,
     )
     .bind(owner_id)
     .fetch_all(pool)
     .await
+}
+
+pub async fn get_photo_image_id(pool: &PgPool, pet_id: &Uuid) -> Result<Option<Uuid>, sqlx::Error> {
+    let row: (Option<Uuid>,) = sqlx::query_as(
+        r#"SELECT photo_image_id FROM pets WHERE id = $1"#,
+    )
+    .bind(pet_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
 }
 
 pub async fn update_pet(pool: &PgPool, pet_id: &Uuid, payload: &UpdatePetRequest) -> Result<Pet, sqlx::Error> {
@@ -71,13 +81,24 @@ pub async fn update_pet(pool: &PgPool, pet_id: &Uuid, payload: &UpdatePetRequest
     get_pet_by_id(pool, pet_id).await
 }
 
-pub async fn update_photo_url(pool: &PgPool, pet_id: &Uuid, url: &str) -> Result<(), sqlx::Error> {
-    sqlx::query(r#"UPDATE pets SET photo_url = $2 WHERE id = $1"#)
+pub async fn update_photo_image_id(
+    pool: &PgPool,
+    pet_id: &Uuid,
+    image_id: &Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    let prev: (Option<Uuid>,) = sqlx::query_as(
+        r#"SELECT photo_image_id FROM pets WHERE id = $1"#,
+    )
+    .bind(pet_id)
+    .fetch_one(pool)
+    .await?;
+
+    sqlx::query(r#"UPDATE pets SET photo_image_id = $2 WHERE id = $1"#)
         .bind(pet_id)
-        .bind(url)
+        .bind(image_id)
         .execute(pool)
         .await?;
-    Ok(())
+    Ok(prev.0)
 }
 
 pub async fn delete_pet(pool: &PgPool, pet_id: &Uuid) -> Result<(), sqlx::Error> {

@@ -24,3 +24,13 @@ pub struct TimeslotAvailability {
     pub time_slot: NaiveTime,
     pub available: bool,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct BulkBlockTimeslotRequest {
+    pub slots: Vec<BlockTimeslotRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkUnblockRequest {
+    pub ids: Vec<Uuid>,
+}

@@ -14,6 +14,9 @@ pub struct Appointment {
     pub notes: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    pub status_changed_by: Option<Uuid>,
+    pub status_changed_at: Option<DateTime<Utc>>,
+    pub status_changed_by_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -35,6 +38,17 @@ pub struct CreateAppointmentRequest {
     /// Required when client books for themselves. When an admin books on behalf of a client,
     /// this MUST be omitted — the client signs later via POST /api/appointments/{id}/waiver.
     pub waiver: Option<crate::models::waiver::WaiverSignaturePayload>,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct AppointmentStatusHistoryEntry {
+    pub id: Uuid,
+    pub appointment_id: Uuid,
+    pub from_status: Option<String>,
+    pub to_status: String,
+    pub changed_by: Option<Uuid>,
+    pub changed_by_name: Option<String>,
+    pub changed_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize)]

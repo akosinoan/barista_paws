@@ -11,7 +11,9 @@ use crate::{
     appointments::config,
     auth::extractor::AuthUser,
     models::api_response::ApiResponse,
-    models::timeslot::{BlockTimeslotRequest, TimeslotAvailability},
+    models::timeslot::{
+        BlockTimeslotRequest, BulkBlockTimeslotRequest, BulkUnblockRequest, TimeslotAvailability,
+    },
     repository::timeslot_repo,
     AppState,
 };
@@ -128,6 +130,67 @@ pub async fn list_blocked(
         Err(e) => error(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to list blocked slots: {}", e),
+        ),
+    }
+}
+
+/// Admin-only: block many slots in a single transaction.
+pub async fn bulk_block(
+    AuthUser(claims): AuthUser,
+    State(state): State<AppState>,
+    Json(payload): Json<BulkBlockTimeslotRequest>,
+) -> impl IntoResponse {
+    if claims.role != "admin" {
+        return error(StatusCode::FORBIDDEN, "Access denied: admin only");
+    }
+
+    if payload.slots.is_empty() {
+        return error(StatusCode::BAD_REQUEST, "No slots provided");
+    }
+
+    for s in &payload.slots {
+        if let Some(slot) = s.time_slot
+            && !config::is_valid_slot(slot)
+        {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "Invalid timeslot: must align with business hours",
+            );
+        }
+    }
+
+    match timeslot_repo::bulk_block_slots(&state.db_pool, &payload.slots).await {
+        Ok(blocked) => ok(StatusCode::CREATED, "Timeslots blocked", blocked),
+        Err(e) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to block timeslots: {}", e),
+        ),
+    }
+}
+
+/// Admin-only: unblock many slots in a single transaction.
+pub async fn bulk_unblock(
+    AuthUser(claims): AuthUser,
+    State(state): State<AppState>,
+    Json(payload): Json<BulkUnblockRequest>,
+) -> impl IntoResponse {
+    if claims.role != "admin" {
+        return error(StatusCode::FORBIDDEN, "Access denied: admin only");
+    }
+
+    if payload.ids.is_empty() {
+        return error(StatusCode::BAD_REQUEST, "No ids provided");
+    }
+
+    match timeslot_repo::bulk_unblock(&state.db_pool, &payload.ids).await {
+        Ok(count) => ok(
+            StatusCode::OK,
+            "Timeslots unblocked",
+            serde_json::json!({ "deleted": count }),
+        ),
+        Err(e) => error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to unblock timeslots: {}", e),
         ),
     }
 }

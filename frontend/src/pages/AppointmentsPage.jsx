@@ -4,7 +4,7 @@ import { useAuth } from '../lib/AuthContext';
 import {
   getMyAppointments,
   createAppointment,
-  deleteAppointment,
+  cancelAppointment,
 } from '../lib/api';
 import AppointmentForm from '../components/AppointmentForm';
 import AppointmentCard from '../components/AppointmentCard';
@@ -37,9 +37,11 @@ export default function AppointmentsPage() {
 
   const handleCancel = async (id) => {
     if (!confirm('Cancel this appointment?')) return;
-    const res = await deleteAppointment(id);
+    const res = await cancelAppointment(id);
     if (res.success) {
-      setAppointments(appointments.filter((a) => a.id !== id));
+      setAppointments((cur) => cur.map((a) => (a.id === id ? res.data : a)));
+    } else {
+      alert(res.message || 'Failed to cancel appointment');
     }
   };
 

@@ -1,100 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
-import {
-  getPetsByOwner, createPet, updatePet, deletePet, uploadPetPhoto,
-  getMyAppointments, deleteAppointment,
-} from '../lib/api';
-import PetCard from '../components/PetCard';
-import PetForm from '../components/PetForm';
+import { getPetsByOwner, getMyAppointments, cancelAppointment } from '../lib/api';
 import AppointmentCard from '../components/AppointmentCard';
+import PetsSection from '../components/PetsSection';
 import { Plus } from 'lucide-react';
 import { Button, Card, CardHeader, CardBody, EmptyState } from '../components/ui';
 import { Skeleton } from '../components/ui/LoadingState';
-
-/* ── Pets section ── */
-function PetsSection({ userId }) {
-  const [pets, setPets] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingPet, setEditingPet] = useState(null);
-
-  useEffect(() => {
-    getPetsByOwner(userId).then((res) => {
-      if (res.success) setPets(res.data || []);
-      setLoading(false);
-    });
-  }, [userId]);
-
-  const handleCreate = async (data) => {
-    const res = await createPet(userId, data);
-    if (res.success) { setPets([res.data, ...pets]); setShowForm(false); }
-  };
-
-  const handleUpdate = async (data) => {
-    const res = await updatePet(editingPet.id, data);
-    if (res.success) { setPets(pets.map((p) => p.id === editingPet.id ? res.data : p)); setEditingPet(null); }
-  };
-
-  const handleDelete = async (petId) => {
-    if (!confirm('Delete this pet?')) return;
-    const res = await deletePet(petId);
-    if (res.success) setPets(pets.filter((p) => p.id !== petId));
-  };
-
-  const handleUploadPhoto = async (petId, file) => {
-    const res = await uploadPetPhoto(petId, file);
-    if (res.success) setPets(pets.map((p) => p.id === petId ? { ...p, photo_url: res.data.url } : p));
-  };
-
-  return (
-    <Card>
-      <CardHeader
-        title="My Pets"
-        action={
-          <Button size="sm" onClick={() => { setShowForm(true); setEditingPet(null); }}>
-            <Plus size={16} /> Add Pet
-          </Button>
-        }
-      />
-
-      <CardBody>
-        {(showForm || editingPet) && (
-          <div className="mb-6 p-4 rounded-lg border border-(--color-border) bg-(--color-muted)/30">
-            <h3 className="text-sm font-semibold mb-3 text-(--color-foreground)">
-              {editingPet ? 'Edit Pet' : 'Add New Pet'}
-            </h3>
-            <PetForm
-              pet={editingPet}
-              onSubmit={editingPet ? handleUpdate : handleCreate}
-              onCancel={() => { setShowForm(false); setEditingPet(null); }}
-            />
-          </div>
-        )}
-
-        {loading ? (
-          <div className="grid sm:grid-cols-2 gap-4">
-            {[1, 2].map((i) => <Skeleton key={i} className="h-48" />)}
-          </div>
-        ) : pets.length === 0 ? (
-          <EmptyState message='No pets yet. Click "Add Pet" to register your first furry friend!' className="py-10" />
-        ) : (
-          <div className="grid sm:grid-cols-2 gap-4">
-            {pets.map((pet) => (
-              <PetCard
-                key={pet.id}
-                pet={pet}
-                onEdit={(p) => { setEditingPet(p); setShowForm(false); }}
-                onDelete={handleDelete}
-                onUploadPhoto={handleUploadPhoto}
-              />
-            ))}
-          </div>
-        )}
-      </CardBody>
-    </Card>
-  );
-}
 
 /* ── Appointments section ── */
 function AppointmentsSection({ userId }) {
@@ -110,8 +22,12 @@ function AppointmentsSection({ userId }) {
 
   const handleCancel = async (id) => {
     if (!confirm('Cancel this appointment?')) return;
-    const res = await deleteAppointment(id);
-    if (res.success) setAppointments(appointments.filter((a) => a.id !== id));
+    const res = await cancelAppointment(id);
+    if (res.success) {
+      setAppointments((cur) => cur.map((a) => (a.id === id ? res.data : a)));
+    } else {
+      alert(res.message || 'Failed to cancel appointment');
+    }
   };
 
   return (
@@ -161,6 +77,16 @@ function AppointmentsSection({ userId }) {
 /* ── Client Dashboard ── */
 export default function ClientDashboard() {
   const { user } = useAuth();
+  const [pets, setPets] = useState([]);
+  const [petsLoading, setPetsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) return;
+    getPetsByOwner(user.id).then((res) => {
+      if (res.success) setPets(res.data || []);
+      setPetsLoading(false);
+    });
+  }, [user]);
 
   if (!user) return null;
 
@@ -170,8 +96,8 @@ export default function ClientDashboard() {
         <h1 className="text-2xl font-bold text-(--color-foreground)">
           Welcome back, {user.first_name}! 🐾
         </h1>
-        <AppointmentsSection userId={user.id} />
-        <PetsSection userId={user.id} />
+        {!petsLoading && pets.length > 0 && <AppointmentsSection userId={user.id} />}
+        <PetsSection userId={user.id} pets={pets} setPets={setPets} loading={petsLoading} />
       </div>
     </div>
   );

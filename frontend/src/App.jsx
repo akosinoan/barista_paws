@@ -13,6 +13,7 @@ import ProfilePage from './pages/ProfilePage';
 import AppointmentsPage from './pages/AppointmentsPage';
 import AdminAppointmentsPage from './pages/AdminAppointmentsPage';
 import WaiverTemplatesPage from './pages/WaiverTemplatesPage';
+import BlockedSlotsPage from './pages/BlockedSlotsPage';
 import { LoadingState } from './components/ui';
 
 function HomeRedirect() {
@@ -25,6 +26,11 @@ function HomeRedirect() {
   }
 
   return <LandingPage />;
+}
+
+function ClientPetsRoute() {
+  const { user } = useAuth();
+  return <PetsPage userId={user.id} />;
 }
 
 function ProtectedRoute({ children, adminOnly = false }) {
@@ -63,6 +69,14 @@ function ClientRoutes() {
           }
         />
         <Route
+          path="/pets"
+          element={
+            <ProtectedRoute>
+              <ClientPetsRoute />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/appointments"
           element={
             <ProtectedRoute>
@@ -87,6 +101,7 @@ function AdminRoutes() {
           <Route path="/users/:userId/pets" element={<PetsPage />} />
           <Route path="/users/:userId/edit" element={<EditUserPage />} />
           <Route path="/appointments" element={<AdminAppointmentsPage />} />
+          <Route path="/blocked-slots" element={<BlockedSlotsPage />} />
           <Route path="/waivers" element={<WaiverTemplatesPage />} />
           <Route path="*" element={<Navigate to="/admin/users" replace />} />
         </Routes>

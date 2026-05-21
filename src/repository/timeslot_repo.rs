@@ -44,6 +44,54 @@ pub async fn unblock(pool: &PgPool, id: &Uuid) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+pub async fn bulk_block_slots(
+    pool: &PgPool,
+    slots: &[BlockTimeslotRequest],
+) -> Result<Vec<BlockedTimeslot>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let mut ids: Vec<Uuid> = Vec::with_capacity(slots.len());
+
+    for payload in slots {
+        let id = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO blocked_timeslots (id, blocked_date, time_slot, reason)
+            VALUES ($1, $2, $3, $4)
+            "#,
+        )
+        .bind(&id)
+        .bind(&payload.blocked_date)
+        .bind(&payload.time_slot)
+        .bind(&payload.reason)
+        .execute(&mut *tx)
+        .await?;
+        ids.push(id);
+    }
+
+    let inserted = sqlx::query_as::<_, BlockedTimeslot>(
+        r#"SELECT id, blocked_date, time_slot, reason, created_at
+           FROM blocked_timeslots
+           WHERE id = ANY($1)
+           ORDER BY blocked_date ASC, time_slot ASC NULLS FIRST"#,
+    )
+    .bind(&ids)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(inserted)
+}
+
+pub async fn bulk_unblock(pool: &PgPool, ids: &[Uuid]) -> Result<u64, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let res = sqlx::query(r#"DELETE FROM blocked_timeslots WHERE id = ANY($1)"#)
+        .bind(ids)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(res.rows_affected())
+}
+
 pub async fn list_blocked(
     pool: &PgPool,
     date: Option<NaiveDate>,

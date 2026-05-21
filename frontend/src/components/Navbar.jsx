@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, LayoutDashboard, User, CalendarClock } from 'lucide-react';
+import { Menu, X, LayoutDashboard, User, CalendarClock, PawPrint } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import Logo from './Logo';
 import LogOutButton from './LogOutButton';
@@ -49,6 +49,12 @@ export default function Navbar() {
                   className="px-3 py-1.5 rounded-lg text-sm no-underline text-(--color-foreground) hover:bg-(--color-muted) transition-colors"
                 >
                   Home
+                </Link>
+                <Link
+                  to="/pets"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm no-underline text-(--color-foreground) hover:bg-(--color-muted) transition-colors"
+                >
+                  <PawPrint size={16} /> Pets
                 </Link>
                 <Link
                   to="/appointments"
@@ -109,6 +115,13 @@ export default function Navbar() {
                 className="block px-3 py-2.5 rounded-lg text-sm no-underline text-(--color-foreground) hover:bg-(--color-muted) transition-colors"
               >
                 Home
+              </Link>
+              <Link
+                to="/pets"
+                onClick={close}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-sm no-underline text-(--color-foreground) hover:bg-(--color-muted) transition-colors"
+              >
+                <PawPrint size={16} /> Pets
               </Link>
               <Link
                 to="/appointments"

@@ -13,4 +13,5 @@ pub fn router() -> Router<AppState> {
         .route("/api/pets/{pet_id}", put(pet_handlers::update_pet))
         .route("/api/pets/{pet_id}", delete(pet_handlers::delete_pet))
         .route("/api/pets/{pet_id}/photo", post(upload_handlers::upload_pet_photo))
+        .route("/api/pets/{pet_id}/photo", get(upload_handlers::get_pet_photo))
 }

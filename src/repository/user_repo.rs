@@ -112,7 +112,7 @@ async fn insert_admin(
 
 pub async fn get_user_by_id(pool: &PgPool, user_id: &Uuid) -> Result<User, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, hashed_password, first_name, last_name, phone_number, address, avatar_url, created_at FROM users WHERE id = $1"#,
+        r#"SELECT id, email, hashed_password, first_name, last_name, phone_number, address, avatar_image_id, created_at FROM users WHERE id = $1"#,
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -121,11 +121,21 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: &Uuid) -> Result<User, sqlx:
 
 pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<User, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, hashed_password, first_name, last_name, phone_number, address, avatar_url, created_at FROM users WHERE email = $1"#,
+        r#"SELECT id, email, hashed_password, first_name, last_name, phone_number, address, avatar_image_id, created_at FROM users WHERE email = $1"#,
     )
     .bind(email)
     .fetch_one(pool)
     .await
+}
+
+pub async fn get_avatar_image_id(pool: &PgPool, user_id: &Uuid) -> Result<Option<Uuid>, sqlx::Error> {
+    let row: (Option<Uuid>,) = sqlx::query_as(
+        r#"SELECT avatar_image_id FROM users WHERE id = $1"#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.0)
 }
 
 pub async fn get_user_role(pool: &PgPool, user_id: &Uuid) -> Result<String, sqlx::Error> {
@@ -159,7 +169,7 @@ pub async fn get_admin_details(pool: &PgPool, user_id: &Uuid) -> Result<Admin, s
 
 pub async fn get_all_users(pool: &PgPool) -> Result<Vec<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        r#"SELECT id, email, hashed_password, first_name, last_name, phone_number, address, avatar_url, created_at FROM users ORDER BY created_at DESC"#,
+        r#"SELECT id, email, hashed_password, first_name, last_name, phone_number, address, avatar_image_id, created_at FROM users ORDER BY created_at DESC"#,
     )
     .fetch_all(pool)
     .await
@@ -199,13 +209,24 @@ pub async fn update_password(pool: &PgPool, user_id: &Uuid, hashed_password: &st
     Ok(())
 }
 
-pub async fn update_avatar_url(pool: &PgPool, user_id: &Uuid, url: &str) -> Result<(), sqlx::Error> {
-    sqlx::query(r#"UPDATE users SET avatar_url = $2 WHERE id = $1"#)
+pub async fn update_avatar_image_id(
+    pool: &PgPool,
+    user_id: &Uuid,
+    image_id: &Uuid,
+) -> Result<Option<Uuid>, sqlx::Error> {
+    let prev: (Option<Uuid>,) = sqlx::query_as(
+        r#"SELECT avatar_image_id FROM users WHERE id = $1"#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    sqlx::query(r#"UPDATE users SET avatar_image_id = $2 WHERE id = $1"#)
         .bind(user_id)
-        .bind(url)
+        .bind(image_id)
         .execute(pool)
         .await?;
-    Ok(())
+    Ok(prev.0)
 }
 
 pub async fn delete_user(pool: &PgPool, user_id: &Uuid) -> Result<(), sqlx::Error> {
